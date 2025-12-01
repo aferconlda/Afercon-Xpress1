@@ -26,6 +26,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   bool _isLoading = false;
   bool _agreedToTerms = false;
   bool _agreedToPrivacyPolicy = false;
+  bool _isDriver = false; // Estado para controlar se o utilizador é motorista
 
   @override
   void dispose() {
@@ -41,7 +42,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) {
-      // Mostra um snackbar se os termos não forem aceites
       if (!_agreedToTerms || !_agreedToPrivacyPolicy) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -61,12 +61,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
       phoneNumber: _phoneNumberController.text.trim(),
       email: _emailController.text.trim(),
       password: _passwordController.text.trim(),
-      vehicleModel: _vehicleModelController.text.trim(),
-      vehiclePlate: _vehiclePlateController.text.trim(),
-      vehicleColor: _vehicleColorController.text.trim(),
+      // Enviar os dados do veículo apenas se o utilizador for motorista
+      vehicleModel: _isDriver ? _vehicleModelController.text.trim() : null,
+      vehiclePlate: _isDriver ? _vehiclePlateController.text.trim() : null,
+      vehicleColor: _isDriver ? _vehicleColorController.text.trim() : null,
     );
 
-    if (!mounted) return; // Verificar se o widget ainda está montado
+    if (!mounted) return;
 
     setState(() => _isLoading = false);
 
@@ -92,7 +93,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // --- Campos de Informação Pessoal ---
                 TextFormField(
                   controller: _fullNameController,
                   decoration: const InputDecoration(labelText: 'Nome Completo', border: OutlineInputBorder()),
@@ -121,26 +121,47 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       value!.length < 6 ? 'A palavra-passe deve ter no mínimo 6 caracteres' : null,
                 ),
                 const SizedBox(height: 24),
-                // --- Campos de Informação do Veículo (Opcional) ---
-                Text('Informação do Veículo (para Motoristas)', style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _vehicleModelController,
-                  decoration: const InputDecoration(labelText: 'Modelo do Veículo (ex: Toyota Yaris)', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _vehiclePlateController,
-                  decoration: const InputDecoration(labelText: 'Matrícula (ex: AA-00-BB)', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 16),
-                TextFormField(
-                  controller: _vehicleColorController,
-                  decoration: const InputDecoration(labelText: 'Cor do Veículo (ex: Azul)', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 24),
 
-                // --- Checkboxes de Consentimento ---
+                // --- Switch para Motorista ---
+                SwitchListTile(
+                  title: const Text('Sou motorista e desejo realizar entregas'),
+                  value: _isDriver,
+                  onChanged: (bool value) {
+                    setState(() {
+                      _isDriver = value;
+                    });
+                  },
+                  secondary: Icon(_isDriver ? Icons.delivery_dining : Icons.person),
+                ),
+                const SizedBox(height: 16),
+
+                // --- Campos de Informação do Veículo (Condicional) ---
+                if (_isDriver)
+                  Column(
+                    children: [
+                      Text('Informação do Veículo', style: Theme.of(context).textTheme.titleMedium),
+                       const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _vehicleModelController,
+                        decoration: const InputDecoration(labelText: 'Modelo do Veículo (ex: Toyota Yaris)', border: OutlineInputBorder()),
+                        validator: (value) => _isDriver && value!.isEmpty ? 'Campo obrigatório para motoristas' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _vehiclePlateController,
+                        decoration: const InputDecoration(labelText: 'Matrícula (ex: AA-00-BB)', border: OutlineInputBorder()),
+                         validator: (value) => _isDriver && value!.isEmpty ? 'Campo obrigatório para motoristas' : null,
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _vehicleColorController,
+                        decoration: const InputDecoration(labelText: 'Cor do Veículo (ex: Azul)', border: OutlineInputBorder()),
+                         validator: (value) => _isDriver && value!.isEmpty ? 'Campo obrigatório para motoristas' : null,
+                      ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+
                 CheckboxListTile(
                   value: _agreedToTerms,
                   onChanged: (value) => setState(() => _agreedToTerms = value!),
@@ -179,7 +200,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   controlAffinity: ListTileControlAffinity.leading,
                   contentPadding: EdgeInsets.zero,
                 ),
-                 // Validador para garantir que as checkboxes estão marcadas
                 FormField<bool>(
                   builder: (state) {
                      return state.hasError ? 
