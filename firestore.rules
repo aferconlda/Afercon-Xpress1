@@ -1,0 +1,76 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Coleção de Utilizadores (perfis)
+    match /users/{userId} {
+      // Qualquer utilizador autenticado pode ler o perfil de outro.
+      // Isto é necessário para que um cliente possa ver os dados do motorista (e vice-versa).
+      allow read: if request.auth != null;
+
+      // Um utilizador só pode criar ou atualizar o seu próprio perfil.
+      // A tentativa de editar o perfil de outro utilizador será bloqueada.
+      allow write: if request.auth.uid == userId;
+    }
+
+    // Coleção de Entregas
+    match /deliveries/{deliveryId} {
+
+      // REGRAS DE LEITURA
+      // ------------------
+
+      // Qualquer utilizador autenticado pode listar as entregas.
+      // A lógica da aplicação irá filtrar quais entregas cada tipo de utilizador vê.
+      allow list: if request.auth != null;
+
+      // Um utilizador só pode ler os detalhes completos de uma entrega se for
+      // o cliente que a criou ou o motorista que a aceitou.
+      allow get: if request.auth != null &&
+                 (resource.data.userId == request.auth.uid || resource.data.driverId == request.auth.uid);
+
+
+      // REGRAS DE ESCRITA
+      // -----------------
+
+      // CRIAR (Publicar Pedido):
+      // Um utilizador autenticado pode criar uma nova entrega se:
+      // 1. O 'userId' da entrega for o seu próprio ID.
+      // 2. O estado inicial for 'available'.
+      // 3. O campo 'driverId' estiver nulo.
+      allow create: if request.auth != null
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'available'
+                    && request.resource.data.driverId == null;
+
+      // ATUALIZAR (Aceitar, Marcar como Entregue, Confirmar):
+      allow update: if request.auth != null && (
+        // Cenário 1: Motorista aceita um pedido disponível.
+        (
+          resource.data.status == 'available' &&
+          request.resource.data.status == 'inProgress' &&
+          request.resource.data.driverId == request.auth.uid &&
+          resource.data.userId != request.auth.uid && // Não pode aceitar o seu próprio pedido
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['driverId', 'status']) // Só pode mudar estes 2 campos
+        ) ||
+        // Cenário 2: Motorista marca o pedido como "A aguardar confirmação".
+        (
+          resource.data.driverId == request.auth.uid &&
+          resource.data.status == 'inProgress' &&
+          request.resource.data.status == 'pendingConfirmation' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) // Só pode mudar o estado
+        ) ||
+        // Cenário 3: Cliente confirma a receção da entrega.
+        (
+          resource.data.userId == request.auth.uid &&
+          resource.data.status == 'pendingConfirmation' &&
+          request.resource.data.status == 'completed' &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) // Só pode mudar o estado
+        )
+      );
+
+      // APAGAR: Ninguém pode apagar uma entrega para manter o histórico.
+      allow delete: if false;
+    }
+  }
+}
