@@ -33,11 +33,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       
       scaffoldMessenger.showSnackBar(
         const SnackBar(
-            content: Text('Link para redefinição de senha enviado para o seu email.')),
+          content: Text('Link para redefinição de senha enviado para o seu email.'),
+          backgroundColor: Colors.green,
+        ),
       );
-      // Atraso para o utilizador ler a mensagem
+      
       Future.delayed(const Duration(seconds: 2), (){
-         if(mounted) context.pop(); // Volta para o ecrã de login
+         if(mounted) context.pop();
       });
 
     } on FirebaseAuthException catch (e) {
@@ -48,11 +50,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
         message = 'Ocorreu um erro. Tente novamente.';
       }
       scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text(message)),
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
       );
     } catch (e) {
        scaffoldMessenger.showSnackBar(
-        const SnackBar(content: Text('Ocorreu um erro inesperado.')),
+        const SnackBar(content: Text('Ocorreu um erro inesperado.'), backgroundColor: Colors.red),
       );
     } finally {
       if (mounted) {
@@ -71,40 +73,59 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           onPressed: () => context.pop(),
         ),
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Insira o seu email para receber um link de recuperação de senha.',
-                textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 24),
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) return 'Campo obrigatório';
-                  if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
-                    return 'Insira um email válido';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator())
-                  : ElevatedButton(
-                      onPressed: _resetPassword,
-                      child: const Text('Enviar Link de Recuperação'),
-                    ),
-            ],
+      body: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(24.0),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Icon(Icons.lock_reset, size: 80, color: Theme.of(context).colorScheme.primary),
+                const SizedBox(height: 24),
+                Text(
+                  'Perdeu a sua palavra-passe?',
+                  textAlign: TextAlign.center,
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Não se preocupe! Insira o seu e-mail abaixo e nós enviaremos um link para criar uma nova.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                ),
+                const SizedBox(height: 32),
+                TextFormField(
+                  controller: _emailController,
+                  decoration: const InputDecoration(
+                    labelText: 'E-mail de Registo',
+                    prefixIcon: Icon(Icons.email_outlined),
+                    border: OutlineInputBorder(),
+                  ),
+                  keyboardType: TextInputType.emailAddress,
+                  validator: (value) {
+                    if (value == null || value.isEmpty) return 'Campo obrigatório';
+                    if (!RegExp(r'^[^@]+@[^@]+\.[^@]+').hasMatch(value)) {
+                      return 'Insira um email válido';
+                    }
+                    return null;
+                  },
+                ),
+                const SizedBox(height: 24),
+                _isLoading
+                    ? const Center(child: CircularProgressIndicator())
+                    : ElevatedButton.icon(
+                        icon: const Icon(Icons.send),
+                        label: const Text('Enviar Link de Recuperação'),
+                        onPressed: _resetPassword,
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                           textStyle: Theme.of(context).textTheme.titleMedium,
+                        ),
+                      ),
+              ],
+            ),
           ),
         ),
       ),
