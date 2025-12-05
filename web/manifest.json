@@ -1,11 +1,11 @@
 {
-    "name": "myapp",
-    "short_name": "myapp",
+    "name": "Afercon Xpress",
+    "short_name": "Afercon Xpress",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Afercon Xpress: Entregas rápidas e seguras. Conecte-se a motoristas, envie as suas encomendas e acompanhe o percurso em tempo real. Simples, rápido e fiável.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

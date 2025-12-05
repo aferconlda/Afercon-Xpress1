@@ -66,14 +66,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Recuperar Senha'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
-        ),
-      ),
-      body: Center(
+       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
           child: Form(
@@ -82,18 +75,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Icon(Icons.lock_reset, size: 80, color: Theme.of(context).colorScheme.primary),
+                Image.asset('assets/afercon-xpress.png', height: 80),
                 const SizedBox(height: 24),
                 Text(
-                  'Perdeu a sua palavra-passe?',
+                  'Recupere a sua conta',
                   textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.bold),
                 ),
                 const SizedBox(height: 16),
-                const Text(
-                  'Não se preocupe! Insira o seu e-mail abaixo e nós enviaremos um link para criar uma nova.',
+                Text(
+                  'Insira o seu e-mail e enviaremos um link para criar uma nova palavra-passe.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 16, color: Colors.grey),
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
                 ),
                 const SizedBox(height: 32),
                 TextFormField(
@@ -117,13 +110,18 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton.icon(
                         icon: const Icon(Icons.send),
-                        label: const Text('Enviar Link de Recuperação'),
+                        label: const Text('Enviar Link'),
                         onPressed: _resetPassword,
                         style: ElevatedButton.styleFrom(
                           padding: const EdgeInsets.symmetric(vertical: 16),
                            textStyle: Theme.of(context).textTheme.titleMedium,
                         ),
                       ),
+                 const SizedBox(height: 24),
+                 TextButton(
+                   onPressed: () => context.pop(),
+                   child: const Text('Voltar ao Login'),
+                 )
               ],
             ),
           ),

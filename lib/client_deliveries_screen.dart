@@ -32,6 +32,8 @@ class ClientDeliveriesScreen extends StatelessWidget {
         return 'A Aguardar Confirmação';
       case DeliveryStatus.completed:
         return 'Concluída';
+      case DeliveryStatus.cancelled:
+        return 'Cancelada';
     }
   }
 
@@ -45,7 +47,71 @@ class ClientDeliveriesScreen extends StatelessWidget {
         return Colors.deepPurple;
       case DeliveryStatus.completed:
         return Colors.green;
+      case DeliveryStatus.cancelled:
+        return Colors.red;
     }
+  }
+
+  // Função para mostrar o diálogo de confirmação de cancelamento
+  Future<void> _showCancelDialog(BuildContext context, Delivery delivery) async {
+    return showDialog<void>(
+      context: context,
+      builder: (BuildContext dialogContext) { // Usamos um novo nome para o contexto do diálogo
+        return AlertDialog(
+          title: const Text('Cancelar Pedido'),
+          content: const SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Tem a certeza que deseja cancelar permanentemente este pedido?'),
+                Text('Esta ação não pode ser desfeita.'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Não'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+              },
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              child: const Text('Sim, Cancelar'),
+              onPressed: () async {
+                // Captura o Navigator e o ScaffoldMessenger antes da operação assíncrona
+                final navigator = Navigator.of(dialogContext);
+                final scaffoldMessenger = ScaffoldMessenger.of(context); // O Scaffold está acima do diálogo
+
+                try {
+                  await FirebaseFirestore.instance
+                      .collection('deliveries')
+                      .doc(delivery.id)
+                      .delete();
+
+                  navigator.pop(); // Fecha o diálogo
+                  
+                  scaffoldMessenger.showSnackBar(
+                    const SnackBar(
+                      content: Text('Pedido cancelado com sucesso.'),
+                      backgroundColor: Colors.green,
+                    ),
+                  );
+                } catch (e) {
+                  navigator.pop(); // Fecha o diálogo
+
+                  scaffoldMessenger.showSnackBar(
+                    SnackBar(
+                      content: Text('Erro ao cancelar o pedido: $e'),
+                      backgroundColor: Colors.red,
+                    ),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -94,19 +160,31 @@ class ClientDeliveriesScreen extends StatelessWidget {
                       style: const TextStyle(fontWeight: FontWeight.bold)),
                   subtitle: Text(
                       'De: ${delivery.pickupAddress}\nPara: ${delivery.deliveryAddress}'),
-                  trailing: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  trailing: Row( // Usamos um Row para o botão e o texto
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        _getStatusText(delivery.status),
-                        style: TextStyle(
-                          color: _getStatusColor(delivery.status),
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            _getStatusText(delivery.status),
+                            style: TextStyle(
+                              color: _getStatusColor(delivery.status),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(CurrencyFormatter.format(delivery.price)),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(CurrencyFormatter.format(delivery.price)),
+                      // Lógica condicional para mostrar o botão de cancelar
+                      if (delivery.status == DeliveryStatus.available)
+                        IconButton(
+                          icon: const Icon(Icons.cancel, color: Colors.red),
+                          tooltip: 'Cancelar Pedido',
+                          onPressed: () => _showCancelDialog(context, delivery),
+                        ),
                     ],
                   ),
                   onTap: () => context.push('/details/${delivery.id}'),

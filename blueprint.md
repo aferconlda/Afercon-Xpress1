@@ -1,62 +1,72 @@
+# Blueprint do Projeto Afercon Xpress
 
-# Visão Geral do Afercon Xpress
+## Visão Geral
 
-O Afercon Xpress é uma aplicação Flutter desenhada para facilitar a conexão entre clientes que precisam de enviar encomendas e motoristas disponíveis para as transportar. A aplicação gere todo o fluxo, desde a publicação de uma nova entrega até à sua conclusão, com um sistema de autenticação e perfis de utilizador.
+Este documento serve como a planta para o desenvolvimento do aplicativo Afercon Xpress, um intermediário de entregas via motoboy. Ele detalha a arquitetura, funcionalidades, design e os planos de implementação.
+
+## Arquitetura e Tecnologia
+
+*   **Framework:** Flutter
+*   **Backend:** Firebase (Authentication, Firestore, Storage, Cloud Functions)
+*   **Gerenciamento de Estado:** Provider
+*   **Fonte:** Google Fonts (Oswald, Roboto, Open Sans)
 
 ## Funcionalidades Implementadas
 
-### Estilo e Design
-- **Tema Visual Moderno:** Interface com um esquema de cores baseado em Azul Petróleo (`#008080`) e Verde Vibrante (`#00C853`), com suporte para **modo claro e escuro**.
-- **Tipografia Profissional:** Utilização da fonte "Poppins" (via `google_fonts`) para uma leitura agradável e consistente.
-- **Componentes Material 3:** A aplicação utiliza os componentes mais recentes do Material Design 3, garantindo um look and feel atual.
-- **Layout Responsivo:** Ecrãs desenhados para se adaptarem a diferentes tamanhos, com uso de `Card` para uma apresentação organizada da informação.
+*   **Autenticação de Utilizador:**
+    *   Registo de Cliente e Motorista (com recolha de dados do veículo).
+    *   Login com E-mail e Senha.
+    *   Verificação de E-mail.
+    *   Recuperação de Senha.
+*   **Perfil do Utilizador:**
+    *   Visualização e edição de perfil (Nome, Telemóvel, Foto).
+*   **Sistema de Entregas:**
+    *   Criação de novos pedidos de entrega (detalhes do item, local de recolha/entrega, preço).
+    *   Listagem de entregas disponíveis para motoristas.
+    *   Aceitação de entregas por motoristas.
+    *   Visualização de entregas "Em Progresso" e "Concluídas".
+*   **Navegação e Ecrãs:**
+    *   Ecrã de Início (Home).
+    *   Ecrãs de "Termos e Condições" e "Política de Privacidade".
+    *   Ecrã de detalhes da entrega.
+*   **Notificações:**
+    *   Configuração básica do Firebase Messaging.
 
-### Arquitetura e Navegação
-- **Gestão de Estado com Provider:** A gestão do tema e da autenticação do utilizador é feita de forma eficiente com o `provider`.
-- **Navegação Declarativa com `go_router`:** Toda a navegação da aplicação é gerida pelo `go_router`, permitindo URLs limpas, passagem de parâmetros (como o ID da entrega) e um controlo de fluxo de autenticação robusto.
-- **Serviço de Autenticação Centralizado (`AuthService`):** Um único serviço gere todas as interações com o Firebase Auth e Firestore (registo, login, logout, obtenção de dados do utilizador e das entregas), promovendo um código mais limpo e organizado.
+## Estilo e Design
 
-### Funcionalidades Principais
-- **Autenticação Completa:**
-    - Registo de novos utilizadores (clientes ou motoristas) com nome, contacto, email e senha.
-    - Login com email e senha.
-    - Funcionalidade de "Esqueci a minha senha".
-    - Verificação de email após o registo.
-- **Fluxo de Entregas:**
-    - **Publicação de Entregas (Cliente):** Um cliente autenticado pode publicar uma nova entrega através de um formulário detalhado, que inclui título, descrição, moradas de recolha/entrega, dados do destinatário e o valor a pagar.
-    - **Lista de Entregas Disponíveis (Motorista):** Na `HomeScreen`, os motoristas podem ver uma lista de todas as entregas disponíveis, ordenadas das mais recentes para as mais antigas.
-    - **Aceitar Entregas (Motorista):** Um motorista pode aceitar uma entrega, que passará para o estado "Em Progresso" e ficará associada ao seu perfil.
-- **Ecrãs do Utilizador:**
-    - **As Minhas Entregas (Cliente):** Um ecrã onde o cliente pode ver o estado de todas as entregas que publicou.
-    - **As Minhas Entregas (Motorista):** Um ecrã onde o motorista pode ver as entregas que aceitou e que estão em andamento ou já foram concluídas.
-- **Ecrã de Detalhes da Entrega:**
-    - Ao tocar numa entrega em qualquer lista, o utilizador é levado para um ecrã de detalhes completo, que mostra:
-        - Título, descrição e estado da entrega.
-        - Percurso (morada de recolha e entrega).
-        - Informação do destinatário.
-        - Valor da entrega.
-        - **Dados do Motorista:** Se a entrega já foi aceite, são mostrados os detalhes do motorista responsável (nome, veículo), com botões para **ligar ou enviar mensagem via WhatsApp**, facilitando a comunicação.
+*   **Tema:** Material 3 com esquema de cores baseado em `Colors.deepPurple`.
+*   **Modos:** Suporte para Light e Dark Mode com um seletor.
+*   **Tipografia:**
+    *   `displayLarge`: Oswald
+    *   `titleLarge`: Roboto
+    *   `bodyMedium`: Open Sans
+*   **Componentes:** Uso de `ElevatedButton`, `AppBar`, etc., com estilos centralizados no `ThemeData`.
 
 ---
 
 ## Plano para a Tarefa Atual
 
-**Objetivo:** Adicionar a recolha de informações do veículo do motorista no registo, exibir esses dados para o cliente e integrar os ecrãs de "Termos e Condições" e "Política de Privacidade".
+**Objetivo:** Implementar um fluxo de cancelamento de entregas "Em Progresso", que exige confirmação mútua entre o cliente e o motorista.
 
 **Passos:**
 
 1.  **Atualizar o Modelo de Dados:**
-    - Adicionar os campos `vehiclePlate` (matrícula) e `vehicleColor` (cor) ao modelo `AppUser` em `lib/models/user_model.dart`.
-2.  **Modificar o Ecrã de Autenticação (`lib/auth_screen.dart`):**
-    - Adicionar `TextFormField`s para "Matrícula do Veículo" e "Cor do Veículo" no formulário de registo.
-    - Adicionar duas `CheckboxListTile` para a aceitação dos "Termos e Condições" e da "Política de Privacidade". A aceitação será obrigatória para o registo.
-    - Adicionar links nos textos dos checkboxes que irão navegar para os respetivos ecrãs de políticas.
-3.  **Criar Ecrãs de Políticas:**
-    - Criar o ficheiro `lib/terms_screen.dart` com um texto padrão para os Termos e Condições da Afercon Xpress.
-    - Criar o ficheiro `lib/privacy_policy_screen.dart` com um texto padrão para a Política de Privacidade.
-4.  **Atualizar Rotas e Navegação:**
-    - Adicionar as rotas `/terms` e `/privacy` no `main.dart` para os novos ecrãs.
-5.  **Atualizar Serviço de Autenticação (`lib/auth_service.dart`):**
-    - Modificar o método `signUp` para receber e guardar os novos dados do veículo (`vehiclePlate`, `vehicleColor`) no documento do utilizador no Firestore.
-6.  **Exibir Dados do Veículo (`lib/delivery_details_screen.dart`):**
-    - No ecrã de detalhes, quando uma entrega estiver em curso, carregar e exibir os dados completos do veículo do motorista (modelo, matrícula e cor) para que o cliente tenha mais informações e segurança.
+    *   Adicionar novos campos ao modelo `Delivery` (em `lib/models/delivery_model.dart`) para gerir o estado do cancelamento:
+        *   `cancellationRequestedBy`: String (para armazenar quem iniciou o pedido: 'client' ou 'driver').
+        *   `cancellationStatus`: String (para o estado: 'pending', 'confirmed').
+        *   `cancellationReason`: String (opcional, para o motivo).
+
+2.  **Modificar o Ecrã de Detalhes da Entrega (`lib/delivery_details_screen.dart`):**
+    *   **Para o Iniciador (Cliente ou Motorista):**
+        *   Adicionar um botão "Cancelar Entrega" visível apenas quando a entrega está "em progresso" e não há pedido de cancelamento pendente.
+        *   Ao clicar, exibir um diálogo para confirmar o desejo de cancelar e, opcionalmente, inserir um motivo.
+        *   Após a confirmação, atualizar o documento da entrega no Firestore, definindo `cancellationRequestedBy` e `cancellationStatus` para 'pending'.
+        *   A interface deve mudar para indicar "Pedido de cancelamento enviado, a aguardar confirmação".
+    *   **Para o Receptor (a outra parte):**
+        *   Quando `cancellationStatus` for 'pending', a interface deve exibir uma notificação proeminente.
+        *   Mostrar dois botões: "Confirmar Cancelamento" e "Recusar".
+        *   **Se confirmar:** Atualizar o estado da entrega para "cancelled".
+        *   **Se recusar:** Limpar os campos `cancellationRequestedBy` e `cancellationStatus` no Firestore, e a entrega volta ao normal.
+
+3.  **Ajustar a Lógica de Listagem:**
+    *   As entregas com estado "cancelled" devem ser movidas das listas "Em Progresso" para um histórico apropriado ou simplesmente filtradas.

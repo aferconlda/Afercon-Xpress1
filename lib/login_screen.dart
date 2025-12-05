@@ -60,6 +60,19 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Login', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green, Colors.blue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white), // Para o botão de voltar, se houver
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -69,7 +82,7 @@ class _LoginScreenState extends State<LoginScreen> {
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                Image.asset('assets/afercon-xpress.png', height: 120),
+                Image.asset('assets/afercon-xpress.png', height: 80),
                 const SizedBox(height: 24),
                 Text(
                   'Bem-vindo à Afercon Xpress',

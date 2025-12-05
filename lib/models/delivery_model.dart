@@ -1,13 +1,13 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum DeliveryStatus { available, inProgress, pendingConfirmation, completed }
+enum DeliveryStatus { available, inProgress, pendingConfirmation, completed, cancelled }
 
 class Delivery {
   final String id;
   final String title;
   final String description;
-  final String? packagePhotoUrl; // Opcional
+  final String? packagePhotoUrl;
   final String pickupAddress;
   final String deliveryAddress;
   final String recipientName;
@@ -16,7 +16,10 @@ class Delivery {
   final DeliveryStatus status;
   final String userId; // ID do cliente que criou a entrega
   final String? driverId; // ID do motorista que aceitou
-  final DateTime createdAt; // Adicionado para ordenação
+  final DateTime createdAt;
+  final String? cancellationRequestedBy; // 'client' ou 'driver'
+  final String? cancellationStatus; // 'pending', 'confirmed'
+  final String? cancellationReason;
 
   Delivery({
     required this.id,
@@ -31,7 +34,10 @@ class Delivery {
     required this.status,
     required this.userId,
     this.driverId,
-    required this.createdAt, // Adicionado ao construtor
+    required this.createdAt,
+    this.cancellationRequestedBy,
+    this.cancellationStatus,
+    this.cancellationReason,
   });
 
   factory Delivery.fromMap(String id, Map<String, dynamic> data) {
@@ -48,7 +54,10 @@ class Delivery {
       status: _statusFromString(data['status'] ?? 'available'),
       userId: data['userId'] ?? '',
       driverId: data['driverId'],
-      createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(), // Converter Timestamp
+      createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),
+      cancellationRequestedBy: data['cancellationRequestedBy'],
+      cancellationStatus: data['cancellationStatus'],
+      cancellationReason: data['cancellationReason'],
     );
   }
 
@@ -65,7 +74,10 @@ class Delivery {
       'status': status.name,
       'userId': userId,
       'driverId': driverId,
-      'createdAt': FieldValue.serverTimestamp(), // Usar o timestamp do servidor
+      'createdAt': FieldValue.serverTimestamp(),
+      'cancellationRequestedBy': cancellationRequestedBy,
+      'cancellationStatus': cancellationStatus,
+      'cancellationReason': cancellationReason,
     };
   }
 

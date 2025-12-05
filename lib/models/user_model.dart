@@ -6,21 +6,34 @@ class AppUser {
   final String email;
   final String fullName;
   final String phoneNumber;
-  final String? vehicleModel;
-  final String? vehiclePlate; // Matrícula do veículo
-  final String? vehicleColor; // Cor do veículo
+  final DateTime? dateOfBirth;
+  final String? nationality;
+
+  // Informações do Veículo
+  final String? vehicleType; // 'Carro' ou 'Moto'
+  final String? vehicleMake; // Marca (ex: Toyota)
+  final String? vehicleModel; // Modelo (ex: Yaris)
+  final int? vehicleYear; // Ano de fabrico
+  final String? vehiclePlate; 
+  final String? vehicleColor; 
+  final String? driverLicenseNumber; // Número da carta de condução
 
   AppUser({
     required this.uid,
     required this.email,
     required this.fullName,
     required this.phoneNumber,
+    this.dateOfBirth,
+    this.nationality,
+    this.vehicleType,
+    this.vehicleMake,
     this.vehicleModel,
+    this.vehicleYear,
     this.vehiclePlate,
     this.vehicleColor,
+    this.driverLicenseNumber,
   });
 
-  // Converte um Documento do Firestore num objeto AppUser
   factory AppUser.fromMap(DocumentSnapshot doc) {
     Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return AppUser(
@@ -28,21 +41,32 @@ class AppUser {
       email: data['email'] ?? '',
       fullName: data['fullName'] ?? '',
       phoneNumber: data['phoneNumber'] ?? '',
+      dateOfBirth: (data['dateOfBirth'] as Timestamp?)?.toDate(),
+      nationality: data['nationality'],
+      vehicleType: data['vehicleType'],
+      vehicleMake: data['vehicleMake'],
       vehicleModel: data['vehicleModel'],
-      vehiclePlate: data['vehiclePlate'], // Ler a matrícula
-      vehicleColor: data['vehicleColor'], // Ler a cor
+      vehicleYear: data['vehicleYear'],
+      vehiclePlate: data['vehiclePlate'],
+      vehicleColor: data['vehicleColor'],
+      driverLicenseNumber: data['driverLicenseNumber'],
     );
   }
 
-  // Converte um objeto AppUser num Map para o Firestore
   Map<String, dynamic> toMap() {
     return {
       'email': email,
       'fullName': fullName,
       'phoneNumber': phoneNumber,
+      'dateOfBirth': dateOfBirth,
+      'nationality': nationality,
+      'vehicleType': vehicleType,
+      'vehicleMake': vehicleMake,
       'vehicleModel': vehicleModel,
-      'vehiclePlate': vehiclePlate, // Adicionar a matrícula ao map
-      'vehicleColor': vehicleColor, // Adicionar a cor ao map
+      'vehicleYear': vehicleYear,
+      'vehiclePlate': vehiclePlate,
+      'vehicleColor': vehicleColor,
+      'driverLicenseNumber': driverLicenseNumber,
     };
   }
 }

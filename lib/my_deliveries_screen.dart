@@ -34,7 +34,8 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
           .where('status', whereIn: [
             DeliveryStatus.inProgress.name,
             DeliveryStatus.pendingConfirmation.name, // Adicionado
-            DeliveryStatus.completed.name
+            DeliveryStatus.completed.name,
+            DeliveryStatus.cancelled.name // Adicionado
           ])
           .orderBy('createdAt', descending: true)
           .snapshots()
@@ -43,8 +44,6 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
               .toList());
     });
   }
-
-  // A função _completeDelivery foi removida, pois a lógica agora está no ecrã de detalhes.
 
   @override
   Widget build(BuildContext context) {
@@ -79,7 +78,6 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
                     final delivery = deliveries[index];
                     return DeliveryListItem(
                       delivery: delivery,
-                      // O onComplete foi removido
                     );
                   },
                 );
@@ -107,6 +105,8 @@ class DeliveryListItem extends StatelessWidget {
         return 'A Aguardar Confirmação';
       case DeliveryStatus.completed:
         return 'Concluída';
+      case DeliveryStatus.cancelled:
+        return 'Cancelada';
     }
   }
 
@@ -120,6 +120,8 @@ class DeliveryListItem extends StatelessWidget {
         return Colors.deepPurple;
       case DeliveryStatus.completed:
         return Colors.green;
+      case DeliveryStatus.cancelled:
+        return Colors.red;
     }
   }
 
@@ -140,7 +142,8 @@ class DeliveryListItem extends StatelessWidget {
           backgroundColor: _getStatusColor(delivery.status),
           labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        onTap: () => context.go('/details/${delivery.id}'),
+        // CORREÇÃO: Alterado de context.go para context.push
+        onTap: () => context.push('/details/${delivery.id}'),
         isThreeLine: true,
       ),
     );
