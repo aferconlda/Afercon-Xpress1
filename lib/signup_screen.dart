@@ -79,16 +79,6 @@ class _SignUpScreenState extends State<SignUpScreen> {
   Future<void> _signUp() async {
     if (!_formKey.currentState!.validate()) return;
 
-    if (!_agreedToTerms || !_agreedToPrivacyPolicy) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('É obrigatório aceitar os Termos e a Política de Privacidade.'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
     setState(() => _isLoading = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -114,17 +104,35 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     setState(() => _isLoading = false);
 
-    if (result != "Success") {
-      scaffoldMessenger.showSnackBar(
-        SnackBar(content: Text(result ?? 'Ocorreu um erro desconhecido.')),
-      );
-    } 
+    if (result == "Success") {
+        scaffoldMessenger.showSnackBar(
+            const SnackBar(content: Text('Registo efetuado! Verifique o seu e-mail para ativar a conta.')),
+        );
+        context.go('/login');
+    } else {
+         scaffoldMessenger.showSnackBar(
+            SnackBar(content: Text(result ?? 'Ocorreu um erro desconhecido.')),
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Criar Conta', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green, Colors.blue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white), // Para o botão de voltar, se houver
+      ),
       body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
@@ -137,13 +145,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 Image.asset('assets/afercon-xpress.png', height: 80),
                 const SizedBox(height: 24),
                 Text(
-                  'Criar a sua Conta',
+                  'Bem-vindo à Afercon Xpress',
                   style: theme.textTheme.headlineLarge?.copyWith(fontWeight: FontWeight.bold),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Preencha os seus dados para começar.',
+                  'Preencha os seus dados para começar a sua jornada.',
                   style: theme.textTheme.titleMedium?.copyWith(color: Colors.grey[600]),
                   textAlign: TextAlign.center,
                 ),
@@ -160,10 +168,11 @@ class _SignUpScreenState extends State<SignUpScreen> {
                 const SizedBox(height: 24),
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : ElevatedButton(
+                    : ElevatedButton.icon(
+                        icon: const Icon(Icons.person_add_alt_1),
+                        label: const Text('Criar Conta'),
                         onPressed: _signUp,
                         style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 16)),
-                        child: const Text('Criar Conta'),
                       ),
                 const SizedBox(height: 24),
                 Row(
@@ -213,7 +222,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Informações Pessoais', style: Theme.of(context).textTheme.titleLarge),
+            Text('Informações Pessoais', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const Divider(height: 24),
             _buildTextFormField(controller: _fullNameController, label: 'Nome Completo', icon: Icons.person_outline, validator: (v) => v!.isEmpty ? 'Insira o seu nome' : null),
             const SizedBox(height: 16),
@@ -239,6 +248,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Widget _buildVehicleInfoCard() {
+    final isMotorcycle = _vehicleType == VehicleType.motorcycle;
+    final theme = Theme.of(context);
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -247,7 +259,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Informações do Veículo', style: Theme.of(context).textTheme.titleLarge),
+            Text('Informações do Veículo', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
             const Divider(height: 24),
             SegmentedButton<VehicleType>(
               segments: const [
@@ -258,13 +270,13 @@ class _SignUpScreenState extends State<SignUpScreen> {
               onSelectionChanged: (newSelection) => setState(() => _vehicleType = newSelection.first),
             ),
             const SizedBox(height: 24),
-            _buildTextFormField(controller: _vehicleMakeController, label: 'Marca do Veículo', icon: Icons.branding_watermark_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
+            _buildTextFormField(controller: _vehicleMakeController, label: isMotorcycle ? 'Marca da Mota' : 'Marca do Veículo', icon: isMotorcycle ? Icons.two_wheeler_outlined : Icons.branding_watermark_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
             const SizedBox(height: 16),
-            _buildTextFormField(controller: _vehicleModelController, label: 'Modelo do Veículo', icon: Icons.directions_car_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
+            _buildTextFormField(controller: _vehicleModelController, label: 'Modelo do Veículo', icon: isMotorcycle ? Icons.motorcycle_outlined : Icons.directions_car_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
             const SizedBox(height: 16),
             _buildTextFormField(controller: _vehicleYearController, label: 'Ano do Veículo', icon: Icons.calendar_today_outlined, keyboardType: TextInputType.number, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
             const SizedBox(height: 16),
-            _buildTextFormField(controller: _vehiclePlateController, label: 'Matrícula', icon: Icons.numbers_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
+            _buildTextFormField(controller: _vehiclePlateController, label: 'Matrícula', icon: Icons.pin_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
             const SizedBox(height: 16),
             _buildTextFormField(controller: _vehicleColorController, label: 'Cor do Veículo', icon: Icons.color_lens_outlined, validator: (v) => _userType == UserType.driver && v!.isEmpty ? 'Campo obrigatório' : null),
              const SizedBox(height: 16),
@@ -298,65 +310,84 @@ class _SignUpScreenState extends State<SignUpScreen> {
       prefixIcon: Icon(icon),
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(8.0)),
       filled: true,
-      fillColor: Colors.grey.withAlpha((255 * 0.1).round()),
+      fillColor: Colors.grey[200],
     );
   }
 
  Widget _buildTermsAndPolicy(ThemeData theme) {
     return Column(
       children: [
-        CheckboxListTile(
-          value: _agreedToTerms,
-          onChanged: (value) => setState(() => _agreedToTerms = value!),
-          title: RichText(
-            text: TextSpan(
-              text: 'Eu li e aceito os ',
-              style: theme.textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text: 'Termos e Condições',
-                  style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-                  recognizer: TapGestureRecognizer()..onTap = () => context.push('/terms'),
-                ),
-              ],
-            ),
-          ),
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
-        ),
-        CheckboxListTile(
-          value: _agreedToPrivacyPolicy,
-          onChanged: (value) => setState(() => _agreedToPrivacyPolicy = value!),
-          title: RichText(
-            text: TextSpan(
-              text: 'Eu li e aceito a ',
-              style: theme.textTheme.bodyMedium,
-              children: [
-                TextSpan(
-                  text: 'Política de Privacidade',
-                  style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
-                  recognizer: TapGestureRecognizer()..onTap = () => context.push('/privacy'),
-                ),
-              ],
-            ),
-          ),
-          controlAffinity: ListTileControlAffinity.leading,
-          contentPadding: EdgeInsets.zero,
-        ),
-         FormField<bool>(
-            builder: (state) {
-                return state.hasError ? 
-                Padding(
-                    padding: const EdgeInsets.only(top: 8.0),
-                    child: Text(state.errorText!, style: TextStyle(color: Theme.of(context).colorScheme.error, fontSize: 12)),
-                ) : Container();
-            },
-            validator: (value) {
-            if (!_agreedToTerms || !_agreedToPrivacyPolicy) {
-                return 'É obrigatório aceitar os termos e a política de privacidade.';
+        FormField<bool>(
+          validator: (value) {
+            if (!_agreedToTerms) {
+                return 'É obrigatório aceitar os Termos e Condições.';
             }
             return null;
             },
+           builder: (state) => Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+                CheckboxListTile(
+                    value: _agreedToTerms,
+                    onChanged: (value) => setState(() => _agreedToTerms = value!),
+                    title: RichText(
+                        text: TextSpan(
+                        text: 'Eu li e aceito os ',
+                        style: theme.textTheme.bodyMedium,
+                        children: [
+                            TextSpan(
+                            text: 'Termos e Condições',
+                            style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+                            recognizer: TapGestureRecognizer()..onTap = () => context.push('/terms'),
+                            ),
+                        ],
+                        ),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    ), 
+                if (state.hasError)
+                    Padding(
+                        padding: const EdgeInsets.only(left: 12.0),
+                        child: Text(state.errorText!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+                    ),    
+             ],)
+        ),
+         FormField<bool>(
+          validator: (value) {
+            if (!_agreedToPrivacyPolicy) {
+                return 'É obrigatório aceitar a Política de Privacidade.';
+            }
+            return null;
+            },
+           builder: (state) => Column(
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               CheckboxListTile(
+                    value: _agreedToPrivacyPolicy,
+                    onChanged: (value) => setState(() => _agreedToPrivacyPolicy = value!),
+                    title: RichText(
+                        text: TextSpan(
+                        text: 'Eu li e aceito a ',
+                        style: theme.textTheme.bodyMedium,
+                        children: [
+                            TextSpan(
+                            text: 'Política de Privacidade',
+                            style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+                            recognizer: TapGestureRecognizer()..onTap = () => context.push('/privacy'),
+                            ),
+                        ],
+                        ),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                    ),
+                if (state.hasError)
+                    Padding(
+                        padding: const EdgeInsets.only(left: 12.0),
+                        child: Text(state.errorText!, style: TextStyle(color: theme.colorScheme.error, fontSize: 12)),
+                    ),
+             ],)
         ),
       ],
     );

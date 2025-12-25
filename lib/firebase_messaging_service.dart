@@ -57,7 +57,7 @@ class FirebaseMessagingService {
                 _androidChannel.id,
                 _androidChannel.name,
                 channelDescription: _androidChannel.description,
-                icon: 'ic_notification', // Usar o ícone de notificação definitivo
+                icon: '@mipmap/ic_launcher', // Ícone corrigido
               ),
             ),
           );
@@ -71,7 +71,7 @@ class FirebaseMessagingService {
 
   Future<void> _initializeLocalNotifications() async {
     const AndroidInitializationSettings initializationSettingsAndroid =
-        AndroidInitializationSettings('ic_notification'); // Usar o ícone de notificação definitivo
+        AndroidInitializationSettings('@mipmap/ic_launcher'); // Ícone corrigido
 
     const DarwinInitializationSettings initializationSettingsIOS = DarwinInitializationSettings(
       requestAlertPermission: true,

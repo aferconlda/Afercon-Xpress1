@@ -26,21 +26,38 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
     setState(() => _isLoading = true);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
 
     try {
-      await FirebaseAuth.instance
-          .sendPasswordResetEmail(email: _emailController.text.trim());
-      
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Link para redefinição de senha enviado para o seu email.'),
-          backgroundColor: Colors.green,
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: _emailController.text.trim());
+
+      if (!mounted) return;
+
+      await showDialog(
+        context: context,
+        barrierDismissible: false, // O utilizador tem de carregar no botão
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Link Enviado com Sucesso!'),
+          content: const SingleChildScrollView(
+            child: ListBody(
+              children: <Widget>[
+                Text('Enviámos um link para redefinir a sua palavra-passe.'),
+                SizedBox(height: 10),
+                Text('Por favor, verifique a sua caixa de entrada e a pasta de SPAM/Lixo Eletrónico.'),
+              ],
+            ),
+          ),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('OK'),
+              onPressed: () {
+                Navigator.of(dialogContext).pop(); // Fecha o diálogo
+                router.pop(); // Volta para o ecrã de login
+              },
+            ),
+          ],
         ),
       );
-      
-      Future.delayed(const Duration(seconds: 2), (){
-         if(mounted) context.pop();
-      });
 
     } on FirebaseAuthException catch (e) {
       String message;
@@ -66,6 +83,19 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+       appBar: AppBar(
+        title: const Text('Recuperar Senha', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green, Colors.blue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
        body: Center(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24.0),
@@ -109,10 +139,11 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton.icon(
-                        icon: const Icon(Icons.send),
-                        label: const Text('Enviar Link'),
+                        icon: const Icon(Icons.send, color: Colors.white),
+                        label: const Text('Enviar Link', style: TextStyle(color: Colors.white)),
                         onPressed: _resetPassword,
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
                           padding: const EdgeInsets.symmetric(vertical: 16),
                            textStyle: Theme.of(context).textTheme.titleMedium,
                         ),

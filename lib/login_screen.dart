@@ -28,6 +28,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final authService = context.read<AuthService>();
     final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
 
     final result = await authService.signIn(
       email: _emailController.text.trim(),
@@ -36,16 +37,19 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (!mounted) return;
 
-    if (result != 'Success') {
+    if (result == 'Success') {
+      // Se o login for bem-sucedido, navega para a home.
+      // A lógica de redirect do GoRouter tratará do resto.
+      router.go('/');
+    } else {
+      // Se falhar, mostra o erro e mantém o utilizador na página.
       scaffoldMessenger.showSnackBar(
         SnackBar(
           content: Text(result ?? 'Ocorreu um erro desconhecido.'),
           backgroundColor: Colors.red,
         ),
       );
-    }
-    
-    if (mounted) {
+      // E pára o indicador de progresso.
       setState(() => _isLoading = false);
     }
   }
@@ -157,12 +161,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 _isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : ElevatedButton.icon(
-                        icon: const Icon(Icons.login),
+                        icon: const Icon(Icons.login, color: Colors.white),
                         label: const Text('Entrar'),
                         onPressed: _signIn,
                         style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green, // Cor de fundo verde
+                          foregroundColor: Colors.white, // Cor do texto e ícone branca
                           padding: const EdgeInsets.symmetric(vertical: 16),
-                          textStyle: Theme.of(context).textTheme.titleMedium,
+                          textStyle: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
                         ),
                       ),
                 const SizedBox(height: 24),

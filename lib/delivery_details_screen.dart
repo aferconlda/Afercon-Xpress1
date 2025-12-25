@@ -1,6 +1,4 @@
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -37,8 +35,47 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
     }
   }
 
+  String _getStatusText(DeliveryStatus status) {
+    switch (status) {
+      case DeliveryStatus.available:
+        return 'Disponível';
+      case DeliveryStatus.inProgress:
+        return 'Em Progresso';
+      case DeliveryStatus.pendingConfirmation:
+        return 'Aguardando Confirmação';
+      case DeliveryStatus.completed:
+        return 'Concluída';
+      case DeliveryStatus.cancelled:
+        return 'Cancelada';
+      case DeliveryStatus.cancellationRequestedByClient:
+        return 'Cancelamento Solicitado pelo Cliente';
+      case DeliveryStatus.cancellationRequestedByDriver:
+        return 'Cancelamento Solicitado pelo Motorista';
+    }
+  }
+
+  Color _getStatusColor(DeliveryStatus status) {
+    switch (status) {
+      case DeliveryStatus.available:
+        return Colors.orange;
+      case DeliveryStatus.inProgress:
+        return Colors.blue;
+      case DeliveryStatus.pendingConfirmation:
+        return Colors.cyan;
+      case DeliveryStatus.completed:
+        return Colors.green;
+      case DeliveryStatus.cancelled:
+      case DeliveryStatus.cancellationRequestedByClient:
+      case DeliveryStatus.cancellationRequestedByDriver:
+        return Colors.red;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final authService = context.read<AuthService>();
+    final currentUser = authService.currentUser;
+
     return StreamBuilder<Delivery?>(
       stream: _deliveryStream,
       builder: (context, snapshot) {
@@ -51,13 +88,21 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
         if (snapshot.hasError || !snapshot.hasData || snapshot.data == null) {
           return Scaffold(
             appBar: AppBar(title: const Text('Erro')),
-            body: const Center(child: Text('Erro ao carregar os detalhes da entrega.')),
+            body: Center(
+                child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                        const Text('Ocorreu um erro ou a entrega já não existe.'),
+                        const SizedBox(height: 16),
+                        ElevatedButton(onPressed: () => context.pop(), child: const Text('Voltar'))
+                    ]
+                )
+            ),
           );
         }
 
         final delivery = snapshot.data!;
-        final authService = context.read<AuthService>();
-        final currentUser = authService.currentUser;
+        final isDriver = currentUser?.uid == delivery.driverId;
 
         return Scaffold(
           appBar: AppBar(
@@ -73,7 +118,19 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _HeaderCard(delivery: delivery),
+                _HeaderCard(
+                  delivery: delivery,
+                  getStatusText: _getStatusText,
+                  getStatusColor: _getStatusColor,
+                ),
+                if (isDriver && delivery.status == DeliveryStatus.completed)
+                  _CommissionPaymentInfo(
+                    onSendProof: () {
+                      final Uri whatsappUri = Uri.parse(
+                          'https://wa.me/244945100502?text=Olá, segue o comprovativo de pagamento da comissão da entrega ID: ${delivery.id}');
+                      _launchUri(whatsappUri);
+                    },
+                  ),
                 _CancellationInfo(delivery: delivery),
                 _RouteTimeline(delivery: delivery),
                 _InfoCard(
@@ -101,8 +158,6 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
                 ),
                 if (delivery.driverId != null)
                   _DriverInfo(delivery: delivery),
-                if (currentUser?.uid == delivery.driverId && delivery.status == DeliveryStatus.completed)
-                  _CommissionPanel(delivery: delivery, driverId: delivery.driverId!),
               ],
             ),
           ),
@@ -115,7 +170,14 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
 
 class _HeaderCard extends StatelessWidget {
   final Delivery delivery;
-  const _HeaderCard({required this.delivery});
+  final String Function(DeliveryStatus) getStatusText;
+  final Color Function(DeliveryStatus) getStatusColor;
+
+  const _HeaderCard({
+    required this.delivery,
+    required this.getStatusText,
+    required this.getStatusColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -136,8 +198,8 @@ class _HeaderCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Chip(
-              label: Text(_getStatusText(delivery.status)),
-              backgroundColor: _getStatusColor(delivery.status),
+              label: Text(getStatusText(delivery.status)),
+              backgroundColor: getStatusColor(delivery.status),
               labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               elevation: 2,
@@ -413,53 +475,125 @@ class _ActionBottomBar extends StatelessWidget {
 
   const _ActionBottomBar({required this.delivery, required this.onStateChange});
 
+  Future<void> _deleteDelivery(BuildContext context) async {
+    final authService = context.read<AuthService>();
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
+    final router = GoRouter.of(context);
+
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Apagar Anúncio'),
+        content: const Text(
+            'Tem a certeza de que deseja apagar permanentemente este anúncio?\\n\\nEsta ação não pode ser desfeita.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red, foregroundColor: Colors.white),
+            child: const Text('Apagar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final result = await authService.deleteDelivery(delivery.id);
+      if (!context.mounted) return;
+
+      if (result == "Success") {
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(
+            content: Text('Anúncio apagado com sucesso.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        router.pop();
+      } else {
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text(result ?? 'Ocorreu um erro ao apagar o anúncio.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final authService = context.read<AuthService>();
     final currentUser = authService.currentUser;
 
-    if (currentUser == null) return const SizedBox.shrink();
+    if (currentUser == null || delivery.status == DeliveryStatus.completed) return const SizedBox.shrink();
 
-    Widget? actionButton;
+    List<Widget> buttons = [];
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
-    if (currentUser.uid == delivery.driverId && delivery.status == DeliveryStatus.inProgress) {
-      actionButton = ElevatedButton.icon(
+    bool isClient = currentUser.uid == delivery.userId;
+    bool isDriver = currentUser.uid == delivery.driverId;
+
+    if (isClient && delivery.status == DeliveryStatus.available) {
+      buttons.add(
+        ElevatedButton.icon(
+          onPressed: () => _deleteDelivery(context),
+          icon: const Icon(Icons.delete_forever_outlined),
+          label: const Text('APAGAR ANÚNCIO'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Theme.of(context).colorScheme.error,
+            foregroundColor: Theme.of(context).colorScheme.onError,
+          ),
+        ),
+      );
+    }
+
+    if (isDriver && delivery.status == DeliveryStatus.inProgress) {
+      buttons.add(ElevatedButton.icon(
         onPressed: () async {
-          final result = await authService.updateDeliveryStatus(delivery.id, DeliveryStatus.pendingConfirmation);
+          final result = await authService.updateDeliveryStatus(
+              delivery.id, DeliveryStatus.pendingConfirmation);
           if (result != "Success") {
-             if (!context.mounted) return;
-            scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro desconhecido')));
+            if (!context.mounted) return;
+            scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text(result ?? 'Erro desconhecido')));
           }
         },
         icon: const Icon(Icons.check_circle_outline),
         label: const Text('MARCAR COMO ENTREGUE'),
-        style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, foregroundColor: Colors.white),
-      );
-    } else if (currentUser.uid == delivery.userId && delivery.status == DeliveryStatus.pendingConfirmation) {
-      actionButton = ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.green.shade600, foregroundColor: Colors.white),
+      ));
+    } else if (isClient && delivery.status == DeliveryStatus.pendingConfirmation) {
+      buttons.add(ElevatedButton.icon(
         onPressed: () async {
-          final result = await authService.updateDeliveryStatus(delivery.id, DeliveryStatus.completed);
-           if (result != "Success") {
+          final result = await authService.updateDeliveryStatus(
+              delivery.id, DeliveryStatus.completed);
+          if (result != "Success") {
             if (!context.mounted) return;
-            scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro desconhecido')));
+            scaffoldMessenger.showSnackBar(
+                SnackBar(content: Text(result ?? 'Erro desconhecido')));
           }
         },
         icon: const Icon(Icons.thumb_up_outlined),
         label: const Text('CONFIRMAR RECEBIMENTO'),
-      );
+      ));
     }
 
-    if (actionButton == null) return const SizedBox.shrink();
+    if (buttons.isEmpty) return const SizedBox.shrink();
 
     return BottomAppBar(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-        child: SizedBox(width: double.infinity, child: actionButton),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [Expanded(child: buttons.first)],
+        ),
       ),
     );
   }
 }
+
 
 class _CancellationInfo extends StatefulWidget {
     final Delivery delivery;
@@ -472,7 +606,7 @@ class _CancellationInfo extends StatefulWidget {
 class _CancellationInfoState extends State<_CancellationInfo> {
     final TextEditingController _reasonController = TextEditingController();
 
-    void _showCancellationDialog(BuildContext context, String deliveryId, String requestedBy) {
+    void _showCancellationDialog(BuildContext context, String deliveryId) {
         final authService = context.read<AuthService>();
         final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -491,13 +625,15 @@ class _CancellationInfoState extends State<_CancellationInfo> {
                         ElevatedButton(
                             onPressed: () async {
                                 final reason = _reasonController.text;
-                                final result = await authService.requestCancellation(deliveryId, requestedBy, reason);
+                                final result = await authService.requestCancellation(deliveryId, reason);
                                 
                                 if (!context.mounted) return;
                                 Navigator.of(dialogContext).pop();
 
                                 if (result != 'Success') {
                                      scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro ao pedir o cancelamento.')));
+                                } else {
+                                     scaffoldMessenger.showSnackBar(const SnackBar(content: Text('Pedido de cancelamento enviado.')));
                                 }
                             },
                             style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
@@ -523,34 +659,39 @@ class _CancellationInfoState extends State<_CancellationInfo> {
 
         final isClient = currentUser.uid == widget.delivery.userId;
         final isDriver = currentUser.uid == widget.delivery.driverId;
-        final isCancellationPending = widget.delivery.cancellationStatus == 'pending';
-        
-        if (widget.delivery.status == DeliveryStatus.cancelled) {
-            return _StatusInfoCard(
-              message: 'Esta entrega foi cancelada.',
-              icon: Icons.cancel,
-              statusType: _StatusInfoType.error,
-            );
-        }
+        final status = widget.delivery.status;
 
-        if (isCancellationPending) {
-            final requesterIsClient = widget.delivery.cancellationRequestedBy == 'client';
-            if ((isClient && !requesterIsClient) || (isDriver && requesterIsClient)) {
-                return _CancellationConfirmationCard(deliveryId: widget.delivery.id);
-            } else {
-                 return _StatusInfoCard(
-                    message: 'Pedido de cancelamento enviado. A aguardar a confirmação da outra parte.',
+        if (status == DeliveryStatus.cancelled || status == DeliveryStatus.completed) {
+             return const SizedBox.shrink();
+        }
+        
+        if (status == DeliveryStatus.cancellationRequestedByClient) {
+          if (isDriver) {
+            return _CancellationConfirmationCard(deliveryId: widget.delivery.id, reason: widget.delivery.cancellationReason);
+          } else if (isClient) {
+            return const _StatusInfoCard(
+                message: 'Pedido de cancelamento enviado. A aguardar a confirmação do motorista.',
+                icon: Icons.hourglass_empty,
+                statusType: _StatusInfoType.warning,
+            );
+          }
+        } else if (status == DeliveryStatus.cancellationRequestedByDriver) {
+            if (isClient) {
+                return _CancellationConfirmationCard(deliveryId: widget.delivery.id, reason: widget.delivery.cancellationReason);
+            } else if (isDriver) {
+                return const _StatusInfoCard(
+                    message: 'Pedido de cancelamento enviado. A aguardar a confirmação do cliente.',
                     icon: Icons.hourglass_empty,
                     statusType: _StatusInfoType.warning,
-                 );
+                );
             }
         }
         
-        if (widget.delivery.status == DeliveryStatus.inProgress) {
+        if (status == DeliveryStatus.inProgress && (isClient || isDriver)) {
              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                 child: TextButton.icon(
-                    onPressed: () => _showCancellationDialog(context, widget.delivery.id, isClient ? 'client' : 'driver'),
+                    onPressed: () => _showCancellationDialog(context, widget.delivery.id),
                     icon: Icon(Icons.cancel_outlined, color: Theme.of(context).colorScheme.error),
                     label: Text('Pedir cancelamento da entrega', style: TextStyle(color: Theme.of(context).colorScheme.error)),
                 ),
@@ -563,12 +704,14 @@ class _CancellationInfoState extends State<_CancellationInfo> {
 
 class _CancellationConfirmationCard extends StatelessWidget {
   final String deliveryId;
-  const _CancellationConfirmationCard({required this.deliveryId});
+  final String? reason;
+  const _CancellationConfirmationCard({required this.deliveryId, this.reason});
 
   @override
   Widget build(BuildContext context) {
     final authService = context.read<AuthService>();
     final theme = Theme.of(context);
+    final scaffoldMessenger = ScaffoldMessenger.of(context);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
@@ -583,13 +726,31 @@ class _CancellationConfirmationCard extends StatelessWidget {
                 textAlign: TextAlign.center,
                 style: TextStyle(fontWeight: FontWeight.bold, color: theme.colorScheme.onErrorContainer),
               ),
+              if(reason != null && reason!.isNotEmpty)
+                Padding(
+                    padding: const EdgeInsets.only(top: 12.0),
+                    child: Text('Motivo: "$reason"', textAlign: TextAlign.center, style: TextStyle(color: theme.colorScheme.onErrorContainer)),
+                ),
               const SizedBox(height: 16),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
-                  TextButton(onPressed: () => authService.clearCancellationRequest(deliveryId), child: const Text('Recusar')),
+                  TextButton(
+                    onPressed: () async {
+                        final result = await authService.rejectCancellation(deliveryId);
+                        if(result != 'Success' && context.mounted) {
+                             scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro ao rejeitar.')));
+                        }
+                    }, 
+                    child: const Text('Recusar')
+                  ),
                   ElevatedButton(
-                    onPressed: () => authService.confirmCancellation(deliveryId),
+                    onPressed: () async {
+                       final result = await authService.confirmCancellation(deliveryId);
+                       if(result != 'Success' && context.mounted) {
+                           scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro ao confirmar.')));
+                       }
+                    },
                     style: ElevatedButton.styleFrom(backgroundColor: theme.colorScheme.error, foregroundColor: theme.colorScheme.onError),
                     child: const Text('Confirmar'),
                   ),
@@ -652,105 +813,43 @@ class _StatusInfoCard extends StatelessWidget {
     }
 }
 
-class _CommissionPanel extends StatelessWidget {
-    final Delivery delivery;
-    final String driverId;
-    const _CommissionPanel({required this.delivery, required this.driverId});
-    
-    @override
-    Widget build(BuildContext context) {
-        final authService = context.read<AuthService>();
-        final theme = Theme.of(context);
-        final commission = delivery.price * 0.10;
-        const iban = 'AO06.0055.0000.39.51.3329.1016.7';
-        const bank = 'Banco Atlântico';
-        const whatsappNumber = '+244945100502';
+class _CommissionPaymentInfo extends StatelessWidget {
+  final VoidCallback onSendProof;
+  const _CommissionPaymentInfo({required this.onSendProof});
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Card(
-            color: theme.colorScheme.surfaceContainerHighest,
-            elevation: 0,
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: FutureBuilder<AppUser?>(
-                  future: authService.getUserDetails(driverId),
-                  builder: (context, snapshot) {
-                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
-                      final driver = snapshot.data!;
-                      final whatsappMessage = Uri.encodeComponent(
-                          'Comprovativo de Pagamento de Comissão\n\n'
-                          'Motorista: ${driver.fullName}\n'
-                          'Email: ${driver.email}\n'
-                          'Contacto: ${driver.phoneNumber}\n\n'
-                          'Entrega: ${delivery.title} (ID: ${delivery.id})\n'
-                          'Valor da Comissão: ${CurrencyFormatter.format(commission)}');
-
-                      return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                              Text('Pagamento de Comissão (10%)', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
-                              const Divider(height: 24),
-                              Text('Para manter a plataforma ativa, uma taxa de 10% é aplicada a cada entrega concluída.', style: theme.textTheme.bodyMedium),
-                              const SizedBox(height: 16),
-                              _PriceRow(price: commission),
-                              const Divider(height: 24),
-                              _InfoRow(label: 'IBAN', value: iban),
-                              _InfoRow(label: 'Banco', value: bank),
-                              Center(
-                                child: TextButton.icon(
-                                  icon: const Icon(Icons.copy, size: 16),
-                                  label: const Text('Copiar IBAN'),
-                                  onPressed: () {
-                                    Clipboard.setData(const ClipboardData(text: iban));
-                                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('IBAN copiado!')));
-                                  },
-                                ),
-                              ),
-                              const Divider(height: 24),
-                              Text('Após o pagamento, envie o comprovativo pelo WhatsApp.', style: theme.textTheme.bodyMedium),
-                              const SizedBox(height: 16),
-                              Center(
-                                child: ElevatedButton.icon(
-                                  icon: const Icon(Icons.send_to_mobile),
-                                  label: const Text('Enviar Comprovativo'),
-                                  onPressed: () async {
-                                      final Uri waUri = Uri.parse('https://wa.me/$whatsappNumber?text=$whatsappMessage');
-                                      if (await canLaunchUrl(waUri)) {
-                                          await launchUrl(waUri, mode: LaunchMode.externalApplication);
-                                      }
-                                  },
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF25D366),
-                                    foregroundColor: Colors.white,
-                                  ),
-                                ),
-                              ),
-                          ],
-                      );
-                  }),
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return _InfoCard(
+      title: 'Pagamento da Comissão',
+      icon: Icons.credit_card,
+      children: [
+        Text(
+          'Para finalizar, por favor, transfira a comissão de 10% para a conta abaixo e envie o comprovativo.',
+          style: theme.textTheme.bodyMedium,
+        ),
+        const SizedBox(height: 16),
+        const _InfoRow(
+          label: 'Empresa',
+          value: 'Afercon Lda',
+        ),
+        const _InfoRow(
+          label: 'IBAN',
+          value: '0055.0000.3951.3329.1016.7',
+        ),
+        const SizedBox(height: 16),
+        Center(
+          child: ElevatedButton.icon(
+            onPressed: onSendProof,
+            icon: const Icon(Icons.send_to_mobile),
+            label: const Text('Enviar Comprovativo via WhatsApp'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
             ),
           ),
-        );
-    }
-}
-
-String _getStatusText(DeliveryStatus status) {
-  switch (status) {
-    case DeliveryStatus.available: return 'Disponível';
-    case DeliveryStatus.inProgress: return 'Em Progresso';
-    case DeliveryStatus.pendingConfirmation: return 'A Aguardar Confirmação';
-    case DeliveryStatus.completed: return 'Concluída';
-    case DeliveryStatus.cancelled: return 'Cancelada';
-  }
-}
-
-Color _getStatusColor(DeliveryStatus status) {
-  switch (status) {
-    case DeliveryStatus.available: return Colors.blue.shade600;
-    case DeliveryStatus.inProgress: return Colors.orange.shade600;
-    case DeliveryStatus.pendingConfirmation: return Colors.purple.shade600;
-    case DeliveryStatus.completed: return Colors.green.shade600;
-    case DeliveryStatus.cancelled: return Colors.red.shade600;
+        )
+      ],
+    );
   }
 }

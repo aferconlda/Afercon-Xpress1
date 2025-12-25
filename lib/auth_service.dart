@@ -1,61 +1,70 @@
-
+import 'dart:async';
 import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
-import 'firebase_messaging_service.dart';
 import 'models/delivery_model.dart';
 import 'models/user_model.dart';
 
 class AuthService {
   final FirebaseAuth _firebaseAuth;
   final FirebaseFirestore _firestore;
-  final FirebaseMessagingService _messagingService;
 
   AuthService(this._firebaseAuth)
-      : _firestore = FirebaseFirestore.instance,
-        _messagingService = FirebaseMessagingService();
+      : _firestore = FirebaseFirestore.instance;
 
   Stream<User?> get authStateChanges => _firebaseAuth.authStateChanges();
 
   User? get currentUser => _firebaseAuth.currentUser;
 
+  Future<void> signOut() async {
+    await _firebaseAuth.signOut();
+  }
+
+  Future<String?> sendPasswordResetEmail({required String email}) async {
+    try {
+      await _firebaseAuth.sendPasswordResetEmail(email: email);
+      return "Success";
+    } on FirebaseAuthException catch (e) {
+      return e.message;
+    }
+  }
+
   Future<Delivery?> getDeliveryDetails(String deliveryId) async {
     try {
       final doc = await _firestore.collection('deliveries').doc(deliveryId).get();
       if (doc.exists) {
-        return Delivery.fromMap(doc.id, doc.data()!); 
+        return Delivery.fromMap(doc.id, doc.data()!);
       }
       return null;
     } catch (e, s) {
-      developer.log(
-        'Erro ao obter detalhes da entrega',
-        name: 'auth_service',
-        error: e,
-        stackTrace: s,
-      );
+      developer.log('Erro ao obter detalhes da entrega', name: 'auth_service', error: e, stackTrace: s);
       return null;
     }
   }
 
   Stream<Delivery?> getDeliveryStream(String deliveryId) {
-    return _firestore
+    final controller = StreamController<Delivery?>();
+    final subscription = _firestore
         .collection('deliveries')
         .doc(deliveryId)
         .snapshots()
-        .map((snapshot) {
+        .listen((snapshot) {
       if (snapshot.exists && snapshot.data() != null) {
-        return Delivery.fromMap(snapshot.id, snapshot.data()!);
+        controller.add(Delivery.fromMap(snapshot.id, snapshot.data()!));
+      } else {
+        controller.add(null);
       }
-      return null;
-    }).handleError((e, s) {
-        developer.log(
-        'Erro no stream da entrega',
-        name: 'auth_service',
-        error: e,
-        stackTrace: s,
-      );
+    }, onError: (e, s) {
+      developer.log('Erro no stream da entrega', name: 'auth_service', error: e, stackTrace: s);
+      controller.addError(e, s);
     });
+
+    controller.onCancel = () {
+      subscription.cancel();
+    };
+
+    return controller.stream;
   }
 
   Future<AppUser?> getUserDetails(String uid) async {
@@ -66,20 +75,12 @@ class AuthService {
       }
       return null;
     } catch (e, s) {
-      developer.log(
-        'Erro ao obter detalhes do utilizador',
-        name: 'auth_service',
-        error: e,
-        stackTrace: s,
-      );
+      developer.log('Erro ao obter detalhes do utilizador', name: 'auth_service', error: e, stackTrace: s);
       return null;
     }
   }
 
-  Future<String?> signIn({
-    required String email,
-    required String password,
-  }) async {
+  Future<String?> signIn({ required String email, required String password }) async {
     try {
       await _firebaseAuth.signInWithEmailAndPassword(email: email, password: password);
       return "Success";
@@ -95,7 +96,6 @@ class AuthService {
     required String password,
     required DateTime? dateOfBirth,
     required String? nationality,
-    // Parâmetros do veículo
     String? vehicleType,
     String? vehicleMake,
     String? vehicleModel,
@@ -142,86 +142,151 @@ class AuthService {
         'status': newStatus.name,
       });
       return "Success";
-    } catch (e) {
-      developer.log('Erro ao atualizar o estado da entrega: $e');
+    } catch (e, s) {
+      developer.log('Erro ao atualizar o estado da entrega', name: 'auth_service', error: e, stackTrace: s);
       return 'Ocorreu um erro ao atualizar a entrega.';
     }
   }
 
-  Future<String?> updateUserProfile(String uid, Map<String, dynamic> data) async {
-    try {
-      await _firestore.collection('users').doc(uid).update(data);
-      return "Success";
-    } catch (e) {
-      developer.log('Erro ao atualizar o perfil do utilizador: $e');
-      return 'Ocorreu um erro ao atualizar o perfil.';
-    }
-  }
+  Future<String?> requestCancellation(User user, String deliveryId, String reason) async {
+    final deliveryRef = _firestore.collection('deliveries').doc(deliveryId);
 
-  Future<String?> sendPasswordResetEmail({required String email}) async {
     try {
-      await _firebaseAuth.sendPasswordResetEmail(email: email);
-      return "Success";
-    } on FirebaseAuthException catch (e) {
-      switch (e.code) {
-        case 'auth/invalid-email':
-          return 'O endereço de e-mail não é válido.';
-        case 'user-not-found':
-          return 'Não foi encontrada nenhuma conta com este e-mail.';
-        default:
-          return 'Ocorreu um erro. Tente novamente mais tarde.';
+      final deliveryDoc = await deliveryRef.get();
+      if (!deliveryDoc.exists) return "Entrega não encontrada.";
+      final delivery = Delivery.fromMap(deliveryDoc.id, deliveryDoc.data()!);
+
+      if (delivery.status != DeliveryStatus.inProgress) {
+        return "O cancelamento só pode ser solicitado para entregas em progresso.";
       }
-    } catch (e) {
-        developer.log('Erro ao enviar e-mail de redefinição de palavra-passe: $e');
-        return 'Ocorreu um erro inesperado.';
-    }
-  }
 
-  Future<void> signOut() async {
-    await _messagingService.removeTokenOnSignOut();
-    await _firebaseAuth.signOut();
-  }
+      final isClient = user.uid == delivery.userId;
+      final isDriver = user.uid == delivery.driverId;
 
-  // --- NOVOS MÉTODOS PARA CANCELAMENTO ---
+      DeliveryStatus newStatus;
+      if (isClient) {
+        newStatus = DeliveryStatus.cancellationRequestedByClient;
+      } else if (isDriver) {
+        newStatus = DeliveryStatus.cancellationRequestedByDriver;
+      } else {
+        return "Apenas o cliente ou o motorista podem solicitar o cancelamento.";
+      }
 
-  Future<String?> requestCancellation(String deliveryId, String requestedBy, String reason) async {
-    try {
-      await _firestore.collection('deliveries').doc(deliveryId).update({
-        'cancellationRequestedBy': requestedBy,
-        'cancellationStatus': 'pending',
+      await deliveryRef.update({
+        'status': newStatus.name,
         'cancellationReason': reason,
       });
-      return 'Success';
-    } catch (e, s) {
-      developer.log('Erro ao solicitar cancelamento', name: 'auth_service', error: e, stackTrace: s);
-      return 'Ocorreu um erro ao processar o seu pedido.';
+
+      return "Success";
+    } on FirebaseException catch (e) {
+      developer.log('Erro ao solicitar cancelamento', name: 'auth_service', error: e);
+      return e.message ?? "Erro desconhecido ao solicitar cancelamento.";
+    } catch (e) {
+      developer.log('Erro inesperado ao solicitar cancelamento', name: 'auth_service', error: e);
+      return "Ocorreu um erro inesperado.";
     }
   }
 
-  Future<String?> confirmCancellation(String deliveryId) async {
+  Future<String?> confirmCancellation(User user, String deliveryId) async {
+    final deliveryRef = _firestore.collection('deliveries').doc(deliveryId);
+    
     try {
-      await _firestore.collection('deliveries').doc(deliveryId).update({
-        'status': DeliveryStatus.cancelled.name,
-        'cancellationStatus': 'confirmed',
+      return _firestore.runTransaction((transaction) async {
+        final deliveryDoc = await transaction.get(deliveryRef);
+        if (!deliveryDoc.exists) return "Entrega não encontrada.";
+        final delivery = Delivery.fromMap(deliveryDoc.id, deliveryDoc.data()!);
+
+        final isClient = user.uid == delivery.userId;
+        final isDriver = user.uid == delivery.driverId;
+
+        if (delivery.status == DeliveryStatus.cancellationRequestedByDriver && isClient) {
+          // Cliente confirma o pedido do motorista. A entrega volta a estar disponível.
+          transaction.update(deliveryRef, {
+            'status': DeliveryStatus.available.name,
+            'driverId': null,
+            'cancellationReason': FieldValue.delete(),
+          });
+          return "Cancelamento confirmado. A entrega está novamente disponível.";
+        } else if (delivery.status == DeliveryStatus.cancellationRequestedByClient && isDriver) {
+          // Motorista confirma o pedido do cliente. A entrega é cancelada permanentemente.
+          transaction.update(deliveryRef, {
+            'status': DeliveryStatus.cancelled.name,
+          });
+          return "Cancelamento confirmado. A entrega foi cancelada.";
+        } else {
+          return "Você não tem permissão para confirmar este cancelamento ou o estado da entrega não permite.";
+        }
       });
-      return 'Success';
-    } catch (e, s) {
-      developer.log('Erro ao confirmar o cancelamento', name: 'auth_service', error: e, stackTrace: s);
-      return 'Ocorreu um erro ao processar o seu pedido.';
+    } on FirebaseException catch (e) {
+      developer.log('Erro ao confirmar cancelamento', name: 'auth_service', error: e);
+      return e.message ?? "Erro desconhecido ao confirmar cancelamento.";
+    } catch (e) {
+      developer.log('Erro inesperado ao confirmar cancelamento', name: 'auth_service', error: e);
+      return "Ocorreu um erro inesperado.";
     }
   }
 
-  Future<String?> clearCancellationRequest(String deliveryId) async {
+
+  Future<String?> rejectCancellation(User user, String deliveryId) async {
+    final deliveryRef = _firestore.collection('deliveries').doc(deliveryId);
+
     try {
-      await _firestore.collection('deliveries').doc(deliveryId).update({
-        'cancellationRequestedBy': null,
-        'cancellationStatus': null,
-        'cancellationReason': null,
+      final deliveryDoc = await deliveryRef.get();
+      if (!deliveryDoc.exists) return "Entrega não encontrada.";
+      final delivery = Delivery.fromMap(deliveryDoc.id, deliveryDoc.data()!);
+
+      final isClient = user.uid == delivery.userId;
+      final isDriver = user.uid == delivery.driverId;
+
+      if (!((delivery.status == DeliveryStatus.cancellationRequestedByClient && isDriver) ||
+          (delivery.status == DeliveryStatus.cancellationRequestedByDriver && isClient))) {
+        return "Você não tem permissão para rejeitar este pedido.";
+      }
+
+      await deliveryRef.update({
+        'status': DeliveryStatus.inProgress.name,
+        'cancellationReason': FieldValue.delete(),
       });
-      return 'Success';
-    } catch (e, s) {
-      developer.log('Erro ao limpar o pedido de cancelamento', name: 'auth_service', error: e, stackTrace: s);
-      return 'Ocorreu um erro ao processar o seu pedido.';
+
+      return "Success";
+    } on FirebaseException catch (e) {
+      developer.log('Erro ao rejeitar cancelamento', name: 'auth_service', error: e);
+      return e.message ?? "Erro desconhecido ao rejeitar cancelamento.";
+    } catch (e,s) {
+      developer.log('Erro inesperado ao rejeitar cancelamento', name: 'auth_service', error: e, stackTrace: s);
+      return "Ocorreu um erro inesperado.";
+    }
+  }
+
+  Future<String?> deleteDelivery(User user, String deliveryId) async {
+    final deliveryRef = _firestore.collection('deliveries').doc(deliveryId);
+
+    try {
+      return _firestore.runTransaction((transaction) async {
+        final deliveryDoc = await transaction.get(deliveryRef);
+        if (!deliveryDoc.exists) {
+          throw Exception("Entrega não encontrada.");
+        }
+
+        final delivery = Delivery.fromMap(deliveryDoc.id, deliveryDoc.data()!);
+
+        if (delivery.userId != user.uid) {
+          throw Exception("Apenas o criador da entrega a pode apagar.");
+        }
+
+        if (delivery.status != DeliveryStatus.available) {
+          throw Exception("A entrega só pode ser apagada se ainda estiver disponível.");
+        }
+
+        transaction.delete(deliveryRef);
+        return "Success";
+      });
+    } on FirebaseException catch (e) {
+      developer.log('Erro ao apagar entrega', name: 'auth_service', error: e);
+      return e.message ?? "Erro desconhecido ao apagar entrega.";
+    } catch (e) {
+      developer.log('Erro inesperado ao apagar entrega', name: 'auth_service', error: e);
+      return e.toString();
     }
   }
 }

@@ -33,9 +33,11 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
           .where('driverId', isEqualTo: driverId)
           .where('status', whereIn: [
             DeliveryStatus.inProgress.name,
-            DeliveryStatus.pendingConfirmation.name, // Adicionado
+            DeliveryStatus.pendingConfirmation.name,
             DeliveryStatus.completed.name,
-            DeliveryStatus.cancelled.name // Adicionado
+            DeliveryStatus.cancellationRequestedByClient.name,
+            DeliveryStatus.cancellationRequestedByDriver.name,
+            DeliveryStatus.cancelled.name,
           ])
           .orderBy('createdAt', descending: true)
           .snapshots()
@@ -49,7 +51,17 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('As Minhas Entregas'),
+        title: const Text('As Minhas Entregas', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green, Colors.blue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white), // Para o botão de voltar, se houver
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => context.pop(),
@@ -105,6 +117,10 @@ class DeliveryListItem extends StatelessWidget {
         return 'A Aguardar Confirmação';
       case DeliveryStatus.completed:
         return 'Concluída';
+      case DeliveryStatus.cancellationRequestedByClient:
+        return 'Cancelamento Solicitado';
+      case DeliveryStatus.cancellationRequestedByDriver:
+        return 'Cancelamento Solicitado';
       case DeliveryStatus.cancelled:
         return 'Cancelada';
     }
@@ -120,6 +136,8 @@ class DeliveryListItem extends StatelessWidget {
         return Colors.deepPurple;
       case DeliveryStatus.completed:
         return Colors.green;
+      case DeliveryStatus.cancellationRequestedByClient:
+      case DeliveryStatus.cancellationRequestedByDriver:
       case DeliveryStatus.cancelled:
         return Colors.red;
     }
@@ -142,7 +160,6 @@ class DeliveryListItem extends StatelessWidget {
           backgroundColor: _getStatusColor(delivery.status),
           labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        // CORREÇÃO: Alterado de context.go para context.push
         onTap: () => context.push('/details/${delivery.id}'),
         isThreeLine: true,
       ),

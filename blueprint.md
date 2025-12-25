@@ -25,6 +25,10 @@ Este documento serve como a planta para o desenvolvimento do aplicativo Afercon 
     *   Listagem de entregas disponíveis para motoristas.
     *   Aceitação de entregas por motoristas.
     *   Visualização de entregas "Em Progresso" e "Concluídas".
+    *   Fluxo de cancelamento de entregas com confirmação mútua.
+*   **Pagamento de Comissões (Motoristas):**
+    *   Após a conclusão da entrega, o motorista visualiza os dados bancários da Afercon Lda para pagamento da comissão de 10%.
+    *   Disponibiliza um atalho para enviar o comprovativo de pagamento via WhatsApp.
 *   **Navegação e Ecrãs:**
     *   Ecrã de Início (Home).
     *   Ecrãs de "Termos e Condições" e "Política de Privacidade".
@@ -46,27 +50,16 @@ Este documento serve como a planta para o desenvolvimento do aplicativo Afercon 
 
 ## Plano para a Tarefa Atual
 
-**Objetivo:** Implementar um fluxo de cancelamento de entregas "Em Progresso", que exige confirmação mútua entre o cliente e o motorista.
+**Objetivo:** Implementar o fluxo de pagamento de comissão para o motorista após a confirmação do recebimento pelo cliente.
 
 **Passos:**
 
-1.  **Atualizar o Modelo de Dados:**
-    *   Adicionar novos campos ao modelo `Delivery` (em `lib/models/delivery_model.dart`) para gerir o estado do cancelamento:
-        *   `cancellationRequestedBy`: String (para armazenar quem iniciou o pedido: 'client' ou 'driver').
-        *   `cancellationStatus`: String (para o estado: 'pending', 'confirmed').
-        *   `cancellationReason`: String (opcional, para o motivo).
+1.  **Modificar o Ecrã de Detalhes da Entrega (`lib/delivery_details_screen.dart`):**
+    *   Verificar se o utilizador é o motorista e se o estado da entrega é "Concluída".
+    *   Se as condições forem verdadeiras, exibir um novo card (`_CommissionPaymentInfo`) com as seguintes informações:
+        *   Dados bancários da Afercon Lda (IBAN: `0055.0000.3951.3329.1016.7`).
+        *   Instruções para o pagamento da comissão de 10%.
+        *   Um botão para abrir o WhatsApp (`+244945100502`) com uma mensagem pré-definida para o envio do comprovativo.
 
-2.  **Modificar o Ecrã de Detalhes da Entrega (`lib/delivery_details_screen.dart`):**
-    *   **Para o Iniciador (Cliente ou Motorista):**
-        *   Adicionar um botão "Cancelar Entrega" visível apenas quando a entrega está "em progresso" e não há pedido de cancelamento pendente.
-        *   Ao clicar, exibir um diálogo para confirmar o desejo de cancelar e, opcionalmente, inserir um motivo.
-        *   Após a confirmação, atualizar o documento da entrega no Firestore, definindo `cancellationRequestedBy` e `cancellationStatus` para 'pending'.
-        *   A interface deve mudar para indicar "Pedido de cancelamento enviado, a aguardar confirmação".
-    *   **Para o Receptor (a outra parte):**
-        *   Quando `cancellationStatus` for 'pending', a interface deve exibir uma notificação proeminente.
-        *   Mostrar dois botões: "Confirmar Cancelamento" e "Recusar".
-        *   **Se confirmar:** Atualizar o estado da entrega para "cancelled".
-        *   **Se recusar:** Limpar os campos `cancellationRequestedBy` e `cancellationStatus` no Firestore, e a entrega volta ao normal.
-
-3.  **Ajustar a Lógica de Listagem:**
-    *   As entregas com estado "cancelled" devem ser movidas das listas "Em Progresso" para um histórico apropriado ou simplesmente filtradas.
+2.  **Ajustar a Visibilidade dos Componentes:**
+    *   Ocultar a barra de ações inferior (`_ActionBottomBar`) e as opções de cancelamento quando a entrega estiver no estado "Concluída" para evitar ações desnecessárias e manter a interface limpa.

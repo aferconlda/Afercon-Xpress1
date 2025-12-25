@@ -19,7 +19,17 @@ class ProfileScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('O Meu Perfil'),
+        title: const Text('O Meu Perfil', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.green, Colors.blue],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: firebaseUser == null
           ? const Center(child: Text('Nenhum utilizador autenticado.'))
@@ -36,14 +46,16 @@ class ProfileScreen extends StatelessWidget {
                 final appUser = AppUser.fromMap(snapshot.data!);
 
                 return ListView(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                   children: [
                     _buildProfileHeader(context, appUser, firebaseUser),
                     const SizedBox(height: 24),
                     _buildInfoCard(context, appUser, firebaseUser),
-                    if (appUser.vehicleModel != null && appUser.vehicleModel!.isNotEmpty)
+                    if (appUser.vehicleType != null && appUser.vehicleType!.isNotEmpty) ...[
+                       const SizedBox(height: 24),
                       _buildVehicleCard(context, appUser),
-                    const SizedBox(height: 24),
+                    ],
+                    const SizedBox(height: 32),
                     _buildActionButtons(context, appUser),
                   ],
                 );
@@ -60,7 +72,7 @@ class ProfileScreen extends StatelessWidget {
           radius: 50,
           backgroundColor: theme.colorScheme.primary.withAlpha(26),
           child: Icon(
-            Icons.person,
+            appUser.vehicleType?.isNotEmpty ?? false ? Icons.drive_eta_outlined : Icons.person_outline,
             size: 50,
             color: theme.colorScheme.primary,
           ),
@@ -76,15 +88,18 @@ class ProfileScreen extends StatelessWidget {
           children: [
             Text(
               appUser.email,
-              style: theme.textTheme.titleMedium?.copyWith(color: Colors.grey),
+              style: theme.textTheme.titleMedium?.copyWith(color: Colors.grey.shade600),
             ),
             if (firebaseUser.emailVerified)
               const Padding(
                 padding: EdgeInsets.only(left: 8.0),
-                child: Icon(
-                  Icons.verified,
-                  color: Colors.blueAccent,
-                  size: 18,
+                child: Tooltip(
+                  message: 'E-mail Verificado',
+                  child: Icon(
+                    Icons.verified,
+                    color: Colors.blueAccent,
+                    size: 18,
+                  ),
                 ),
               ),
           ],
@@ -93,65 +108,68 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildInfoTile(BuildContext context, {required IconData icon, required String title, required String? subtitle, Widget? trailing}) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: Icon(icon, color: theme.colorScheme.secondary, size: 22),
+      title: Text(title, style: const TextStyle(fontWeight: FontWeight.w500)),
+      subtitle: Text(subtitle ?? 'Não especificado', style: theme.textTheme.bodyLarge?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+      trailing: trailing,
+      contentPadding: EdgeInsets.zero,
+    );
+  }
+
   Widget _buildInfoCard(BuildContext context, AppUser appUser, User firebaseUser) {
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Informações Pessoais', style: Theme.of(context).textTheme.titleLarge),
-            const Divider(height: 24),
-            ListTile(
-              leading: const Icon(Icons.email_outlined),
-              title: const Text('E-mail'),
-              subtitle: Row(
-                children: [
-                  Text(appUser.email),
-                  if (firebaseUser.emailVerified)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 8.0),
-                      child: Icon(
-                        Icons.verified_user,
-                        color: Colors.green,
-                        size: 16,
-                      ),
-                    ),
-                ],
-              ),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Text('Informações Pessoais', style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+            ),
+            const Divider(height: 16),
+            _buildInfoTile(
+              context,
+              icon: Icons.email_outlined,
+              title: 'E-mail',
+              subtitle: appUser.email,
               trailing: !firebaseUser.emailVerified
-                  ? TextButton(
-                      onPressed: () async {
-                        final scaffoldMessenger = ScaffoldMessenger.of(context);
-                        await firebaseUser.sendEmailVerification();
-                        if (!context.mounted) return;
-                        scaffoldMessenger.showSnackBar(const SnackBar(
-                          content: Text('E-mail de verificação enviado!'),
-                          backgroundColor: Colors.green,
-                        ));
-                      },
-                      child: const Text('Verificar'))
-                  : null,
+                  ? TextButton(onPressed: () async { /* ... */ }, child: const Text('Verificar'))
+                  : const Padding(
+                      padding: EdgeInsets.only(right: 8.0),
+                      child: Icon(Icons.verified, color: Colors.blueAccent, size: 20),
+                    ),
             ),
-            ListTile(
-              leading: const Icon(Icons.phone_outlined),
-              title: const Text('Número de Telemóvel'),
-              subtitle: Text(appUser.phoneNumber),
+            const Divider(indent: 56),
+            _buildInfoTile(
+              context,
+              icon: Icons.phone_outlined,
+              title: 'Número de Telemóvel',
+              subtitle: appUser.phoneNumber,
             ),
-            if (appUser.dateOfBirth != null)
-              ListTile(
-                leading: const Icon(Icons.cake_outlined),
-                title: const Text('Data de Nascimento'),
-                subtitle: Text(DateFormat('dd/MM/yyyy').format(appUser.dateOfBirth!)),
+            if (appUser.dateOfBirth != null) ...[
+              const Divider(indent: 56),
+              _buildInfoTile(
+                context,
+                icon: Icons.cake_outlined,
+                title: 'Data de Nascimento',
+                subtitle: DateFormat('dd/MM/yyyy').format(appUser.dateOfBirth!),
               ),
-            if (appUser.nationality != null && appUser.nationality!.isNotEmpty)
-              ListTile(
-                leading: const Icon(Icons.flag_outlined),
-                title: const Text('Nacionalidade'),
-                subtitle: Text(appUser.nationality!),
+            ],
+            if (appUser.nationality != null && appUser.nationality!.isNotEmpty) ...[
+              const Divider(indent: 56),
+              _buildInfoTile(
+                context,
+                icon: Icons.flag_outlined,
+                title: 'Nacionalidade',
+                subtitle: appUser.nationality!,
               ),
+            ],
           ],
         ),
       ),
@@ -159,31 +177,42 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Widget _buildVehicleCard(BuildContext context, AppUser user) {
+    final isMotorcycle = user.vehicleType == 'motorcycle';
+    final vehicleName = isMotorcycle ? 'Mota' : 'Carro';
+    final theme = Theme.of(context);
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Informações do Veículo', style: Theme.of(context).textTheme.titleLarge),
-            const Divider(height: 24),
-            ListTile(
-              leading: const Icon(Icons.directions_car_filled),
-              title: const Text('Modelo'),
-              subtitle: Text(user.vehicleModel ?? 'Não especificado'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8.0),
+              child: Row(
+                children: [
+                  Icon(isMotorcycle ? Icons.two_wheeler : Icons.directions_car, color: theme.textTheme.titleLarge?.color, size: 22),
+                  const SizedBox(width: 12),
+                  Text('Informações do Veículo', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
+                ],
+              ),
             ),
-            ListTile(
-              leading: const Icon(Icons.numbers),
-              title: const Text('Matrícula'),
-              subtitle: Text(user.vehiclePlate ?? 'Não especificado'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.color_lens_outlined),
-              title: const Text('Cor'),
-              subtitle: Text(user.vehicleColor ?? 'Não especificado'),
-            ),
+            const Divider(height: 16),
+            _buildInfoTile(context, icon: Icons.category_outlined, title: 'Tipo de Veículo', subtitle: vehicleName),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.branding_watermark_outlined, title: isMotorcycle ? 'Marca da Mota' : 'Marca do Carro', subtitle: user.vehicleMake),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.model_training_outlined, title: 'Modelo', subtitle: user.vehicleModel),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.calendar_today_outlined, title: 'Ano', subtitle: user.vehicleYear?.toString()),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.pin_outlined, title: 'Matrícula', subtitle: user.vehiclePlate),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.color_lens_outlined, title: 'Cor', subtitle: user.vehicleColor),
+            const Divider(indent: 56),
+            _buildInfoTile(context, icon: Icons.badge_outlined, title: 'Nº da Carta de Condução', subtitle: user.driverLicenseNumber),
           ],
         ),
       ),
@@ -191,6 +220,8 @@ class ProfileScreen extends StatelessWidget {
   }
 
   Widget _buildActionButtons(BuildContext context, AppUser user) {
+     final authService = context.read<AuthService>();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -204,11 +235,10 @@ class ProfileScreen extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        OutlinedButton.icon(
-          icon: const Icon(Icons.lock_outline),
-          label: const Text('Alterar Palavra-passe'),
+        TextButton.icon(
+          icon: Icon(Icons.lock_reset_outlined, color: Theme.of(context).colorScheme.secondary),
+          label: Text('Alterar Palavra-passe', style: TextStyle(color: Theme.of(context).colorScheme.secondary)),
           onPressed: () async {
-            final authService = context.read<AuthService>();
             final scaffoldMessenger = ScaffoldMessenger.of(context);
             final result = await authService.sendPasswordResetEmail(email: user.email);
 
@@ -216,7 +246,7 @@ class ProfileScreen extends StatelessWidget {
             if (result == "Success") {
               scaffoldMessenger.showSnackBar(
                 const SnackBar(
-                  content: Text('E-mail para redefinição de palavra-passe enviado! Verifique a sua caixa de entrada.'),
+                  content: Text('E-mail para redefinição de palavra-passe enviado!'),
                   backgroundColor: Colors.green,
                 ),
               );
@@ -229,9 +259,10 @@ class ProfileScreen extends StatelessWidget {
               );
             }
           },
-          style: OutlinedButton.styleFrom(
+          style: TextButton.styleFrom(
             padding: const EdgeInsets.symmetric(vertical: 12),
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+             side: BorderSide(color: Theme.of(context).colorScheme.secondary)
           ),
         ),
       ],

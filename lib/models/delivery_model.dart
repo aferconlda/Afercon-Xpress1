@@ -1,7 +1,15 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum DeliveryStatus { available, inProgress, pendingConfirmation, completed, cancelled }
+// Enum atualizado para incluir os estados de solicitação de cancelamento.
+enum DeliveryStatus {
+  available,
+  inProgress,
+  pendingConfirmation,
+  completed,
+  cancellationRequestedByClient,
+  cancellationRequestedByDriver, cancelled,
+}
 
 class Delivery {
   final String id;
@@ -12,14 +20,14 @@ class Delivery {
   final String deliveryAddress;
   final String recipientName;
   final String recipientPhone;
-  final double price;
+  final double basePrice; // Valor para o motorista
+  final double serviceFee; // Taxa de serviço
+  final double totalPrice; // Valor total para o cliente
   final DeliveryStatus status;
   final String userId; // ID do cliente que criou a entrega
   final String? driverId; // ID do motorista que aceitou
   final DateTime createdAt;
-  final String? cancellationRequestedBy; // 'client' ou 'driver'
-  final String? cancellationStatus; // 'pending', 'confirmed'
-  final String? cancellationReason;
+  final String? cancellationReason; // Mantido para registar o motivo.
 
   Delivery({
     required this.id,
@@ -30,13 +38,13 @@ class Delivery {
     required this.deliveryAddress,
     required this.recipientName,
     required this.recipientPhone,
-    required this.price,
+    required this.basePrice,
+    required this.serviceFee,
+    required this.totalPrice,
     required this.status,
     required this.userId,
     this.driverId,
     required this.createdAt,
-    this.cancellationRequestedBy,
-    this.cancellationStatus,
     this.cancellationReason,
   });
 
@@ -50,16 +58,18 @@ class Delivery {
       deliveryAddress: data['deliveryAddress'] ?? '',
       recipientName: data['recipientName'] ?? '',
       recipientPhone: data['recipientPhone'] ?? '',
-      price: (data['price'] ?? 0).toDouble(),
+      basePrice: (data['basePrice'] ?? data['price'] ?? 0).toDouble(),
+      serviceFee: (data['serviceFee'] ?? 0).toDouble(),
+      totalPrice: (data['totalPrice'] ?? data['price'] ?? 0).toDouble(),
       status: _statusFromString(data['status'] ?? 'available'),
       userId: data['userId'] ?? '',
       driverId: data['driverId'],
       createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),
-      cancellationRequestedBy: data['cancellationRequestedBy'],
-      cancellationStatus: data['cancellationStatus'],
       cancellationReason: data['cancellationReason'],
     );
   }
+
+  double get price => totalPrice;
 
   Map<String, dynamic> toMap() {
     return {
@@ -70,13 +80,13 @@ class Delivery {
       'deliveryAddress': deliveryAddress,
       'recipientName': recipientName,
       'recipientPhone': recipientPhone,
-      'price': price,
+      'basePrice': basePrice,
+      'serviceFee': serviceFee,
+      'totalPrice': totalPrice,
       'status': status.name,
       'userId': userId,
       'driverId': driverId,
       'createdAt': FieldValue.serverTimestamp(),
-      'cancellationRequestedBy': cancellationRequestedBy,
-      'cancellationStatus': cancellationStatus,
       'cancellationReason': cancellationReason,
     };
   }

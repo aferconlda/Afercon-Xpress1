@@ -5,6 +5,58 @@ const admin = require("firebase-admin");
 admin.initializeApp();
 
 /**
+ * Cloud Function to send a notification to all drivers when a new delivery is created.
+ */
+exports.notifyDriversOnNewDelivery = functions.firestore
+    .document("deliveries/{deliveryId}")
+    .onCreate(async (snapshot, context) => {
+        const delivery = snapshot.data();
+        const deliveryId = context.params.deliveryId;
+
+        // 1. Get all users who are drivers
+        const usersSnapshot = await admin.firestore().collection("users").where("isDriver", "==", true).get();
+        if (usersSnapshot.empty) {
+            console.log("No drivers found to notify.");
+            return;
+        }
+
+        // 2. Create a notification payload
+        const payload = {
+            notification: {
+                title: "Nova Entrega Disponível!",
+                body: `Uma nova entrega "${delivery.title}" está disponível para aceitação.`,
+            },
+            data: {
+                deliveryId: deliveryId,
+                click_action: "FLUTTER_NOTIFICATION_CLICK", // For specific handling in the app
+            },
+        };
+
+        // 3. Get the FCM tokens of all drivers
+        const tokens = [];
+        usersSnapshot.forEach(doc => {
+            const user = doc.data();
+            if (user.fcmToken) {
+                tokens.push(user.fcmToken);
+            }
+        });
+
+        if (tokens.length === 0) {
+            console.log("No drivers with FCM tokens found.");
+            return;
+        }
+
+        // 4. Send the notification to all tokens
+        try {
+            const response = await admin.messaging().sendToDevice(tokens, payload);
+            console.log("Successfully sent notification to all drivers:", response);
+        } catch (error) {
+            console.error("Error sending notification to drivers:", error);
+        }
+    });
+
+
+/**
  * Cloud Function to send a notification when a delivery is accepted.
  *
  * This function is triggered when a document in the 'deliveries' collection is updated.

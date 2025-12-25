@@ -3,60 +3,108 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // Coleção de Utilizadores (perfis)
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Função para verificar se o utilizador é o cliente ou o motorista de uma entrega
+    function isDeliveryParticipant(deliveryDoc) {
+      let isClient = isUser(deliveryDoc.data.userId);
+      let isDriver = 'driverId' in deliveryDoc.data && isUser(deliveryDoc.data.driverId);
+      return isClient || isDriver;
+    }
+
+    // Função para verificar os campos que estão a ser alterados numa atualização
+    function isOnlyFields(request, resource, fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
     match /users/{userId} {
-      allow read: if request.auth != null;
-      allow write: if request.auth.uid == userId;
+      allow read: if isSignedIn();
+      allow write: if isUser(userId);
 
       match /notifications/{notificationId} {
-        allow read, write: if request.auth.uid == userId;
+        allow read, write: if isUser(userId);
       }
     }
 
-    // Coleção de Entregas
     match /deliveries/{deliveryId} {
+      allow list: if isSignedIn();
+      allow get: if isSignedIn(); // Simplificado - a UI deve filtrar o que mostrar
 
-      // REGRAS DE LEITURA
-      allow list: if request.auth != null;
-      allow get: if request.auth != null &&
-                 (resource.data.status == 'available' || // PERMITE LER SE ESTIVER DISPONÍVEL
-                  resource.data.userId == request.auth.uid || 
-                  resource.data.driverId == request.auth.uid);
-
-      // REGRAS DE ESCRITA
-      allow create: if request.auth != null
-                    && request.resource.data.userId == request.auth.uid
+      allow create: if isUser(request.resource.data.userId)
                     && request.resource.data.status == 'available'
                     && request.resource.data.driverId == null;
 
-      allow update: if request.auth != null && (
-        // Cenário 1: Motorista aceita um pedido disponível.
-        (
-          resource.data.status == 'available' &&
+      allow update: if isSignedIn() && (
+        // --- ACEITAR ENTREGA ---
+        // Um motorista (que não é o cliente) pode aceitar uma entrega disponível
+        ( resource.data.status == 'available' &&
           request.resource.data.status == 'inProgress' &&
           request.resource.data.driverId == request.auth.uid &&
           resource.data.userId != request.auth.uid &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['driverId', 'status'])
+          isOnlyFields(request, resource, ['status', 'driverId'])
         ) ||
-        // Cenário 2: Motorista marca o pedido como "A aguardar confirmação".
-        (
-          resource.data.driverId == request.auth.uid &&
+
+        // --- ATUALIZAR ESTADO (MOTORISTA) ---
+        // O motorista pode atualizar para 'pendingConfirmation'
+        ( isUser(resource.data.driverId) &&
           resource.data.status == 'inProgress' &&
           request.resource.data.status == 'pendingConfirmation' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          isOnlyFields(request, resource, ['status'])
         ) ||
-        // Cenário 3: Cliente confirma a receção da entrega.
-        (
-          resource.data.userId == request.auth.uid &&
+
+        // --- CONFIRMAR ENTREGA (CLIENTE) ---
+        // O cliente pode confirmar e completar a entrega
+        ( isUser(resource.data.userId) &&
           resource.data.status == 'pendingConfirmation' &&
           request.resource.data.status == 'completed' &&
-          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          isOnlyFields(request, resource, ['status'])
+        ) ||
+
+        // --- SOLICITAR CANCELAMENTO ---
+        // O cliente ou o motorista podem solicitar o cancelamento de uma entrega em progresso
+        ( (isUser(resource.data.userId) || isUser(resource.data.driverId)) &&
+          resource.data.status == 'inProgress' &&
+          (request.resource.data.status == 'cancellationRequestedByClient' || request.resource.data.status == 'cancellationRequestedByDriver') &&
+          isOnlyFields(request, resource, ['status', 'cancellationReason']) // Permitir a razão do cancelamento
+        ) ||
+
+        // --- REJEITAR CANCELAMENTO ---
+        // O cliente ou o motorista podem rejeitar o cancelamento, voltando a 'inProgress'
+        ( (isUser(resource.data.userId) || isUser(resource.data.driverId)) &&
+          (resource.data.status == 'cancellationRequestedByClient' || resource.data.status == 'cancellationRequestedByDriver') &&
+          request.resource.data.status == 'inProgress' &&
+          isOnlyFields(request, resource, ['status', 'cancellationReason']) // Permitir remover a razão
+        ) ||
+
+        // --- CONFIRMAR CANCELAMENTO (PARA CANCELADO) ---
+        // O motorista confirma o pedido do cliente, cancelando permanentemente a entrega
+        ( isUser(resource.data.driverId) &&
+          resource.data.status == 'cancellationRequestedByClient' &&
+          request.resource.data.status == 'cancelled' &&
+          isOnlyFields(request, resource, ['status'])
+        ) ||
+
+        // --- CONFIRMAR CANCELAMENTO (PARA DISPONÍVEL) ---
+        // O cliente confirma o pedido do motorista, libertando a entrega
+        ( isUser(resource.data.userId) &&
+          resource.data.status == 'cancellationRequestedByDriver' &&
+          request.resource.data.status == 'available' &&
+          request.resource.data.driverId == null &&
+          isOnlyFields(request, resource, ['status', 'driverId', 'cancellationReason'])
         )
       );
 
-      // Um cliente pode apagar (cancelar) um pedido se for o criador
-      // e se o pedido ainda não tiver sido aceite por um motorista.
-      allow delete: if request.auth.uid == resource.data.userId && resource.data.status == 'available';
+      allow delete: if isUser(resource.data.userId) && resource.data.status == 'available';
+
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn() && isDeliveryParticipant(get(/databases/$(database)/documents/deliveries/$(deliveryId)));
+      }
     }
   }
 }
