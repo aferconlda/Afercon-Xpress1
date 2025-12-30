@@ -1,18 +1,20 @@
+
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:timeago/timeago.dart' as timeago;
 
 import 'auth_service.dart';
 import 'chat_screen.dart';
 import 'client_deliveries_screen.dart';
 import 'delivery_details_screen.dart';
+import 'details_screen.dart';
 import 'edit_profile_screen.dart';
-import 'firebase_messaging_service.dart';
 import 'firebase_options.dart';
 import 'forgot_password_screen.dart';
 import 'home_screen.dart';
@@ -24,39 +26,47 @@ import 'privacy_policy_screen.dart';
 import 'profile_screen.dart';
 import 'signup_screen.dart';
 import 'terms_screen.dart';
+import 'theme_provider.dart';
 import 'verify_email_screen.dart';
 
-// Classe para gerir o estado do tema
-class ThemeProvider with ChangeNotifier {
-  ThemeMode _themeMode = ThemeMode.system;
-  ThemeMode get themeMode => _themeMode;
-
-  void toggleTheme() {
-    _themeMode = _themeMode == ThemeMode.light ? ThemeMode.dark : ThemeMode.light;
-    notifyListeners();
-  }
-}
-
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
-  await FirebaseMessagingService().initialize();
-  timeago.setLocaleMessages('pt_BR', timeago.PtBrMessages());
+  // Envolve a app numa "zona" que captura todos os erros não tratados.
+  await runZonedGuarded<Future<void>>(() async {
+    WidgetsFlutterBinding.ensureInitialized();
+    
+    // Tenta inicializar o Firebase e ignora o erro se já estiver inicializado (comum em hot restarts).
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } on FirebaseException catch (e) {
+      if (e.code != 'duplicate-app') {
+        // Se o erro for outro que não "duplicate-app", lança-o.
+        rethrow;
+      }
+    }
 
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
-        Provider<AuthService>(
-          create: (_) => AuthService(FirebaseAuth.instance),
-        ),
-        // O StreamProvider agora é usado implicitamente pelo StreamBuilder abaixo
-      ],
-      child: const MyApp(),
-    ),
-  );
+    // Configuração do Crashlytics para capturar erros do Flutter e erros assíncronos.
+    FlutterError.onError = (errorDetails) {
+      if (kDebugMode) {
+        FlutterError.dumpErrorToConsole(errorDetails);
+      } else {
+        FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+      }
+    };
+
+    // Captura erros que acontecem fora do framework Flutter (ex: código assíncrono).
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+
+    runApp(const MyApp());
+    
+  }, (error, stack) {
+    // Este é o "apanhador" final da zona. Envia qualquer outro erro para o Crashlytics.
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+  });
 }
 
 class MyApp extends StatelessWidget {
@@ -64,95 +74,66 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Usamos um StreamBuilder para esperar pelo estado inicial de autenticação
-    return StreamBuilder<User?>(
-      stream: context.read<AuthService>().authStateChanges,
-      builder: (context, snapshot) {
-        // Enquanto esperamos pela primeira resposta do Firebase Auth, mostramos uma tela de carregamento
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const MaterialApp(
-            home: Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(),
-              ),
-            ),
-          );
-        }
-
-        // Quando o estado de autenticação é conhecido, construímos o app com o roteador
-        return const AppRouter();
-      },
+    return MultiProvider(
+      providers: [
+        Provider<AuthService>(
+          create: (_) => AuthService(FirebaseAuth.instance),
+        ),
+        StreamProvider<User?>(
+          create: (context) => context.read<AuthService>().authStateChanges,
+          initialData: null,
+        ),
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(),
+        ),
+      ],
+      child: const MaterialAppRouter(),
     );
   }
 }
 
-// Widget que contém a lógica do roteador e da MaterialApp
-class AppRouter extends StatelessWidget {
-  const AppRouter({super.key});
+class MaterialAppRouter extends StatelessWidget {
+  const MaterialAppRouter({super.key});
 
   @override
   Widget build(BuildContext context) {
     final authService = Provider.of<AuthService>(context, listen: false);
 
     final router = GoRouter(
-      initialLocation: '/',
+      initialLocation: '/login',
       refreshListenable: GoRouterRefreshStream(authService.authStateChanges),
-      redirect: (BuildContext context, GoRouterState state) {
-        final authService = context.read<AuthService>();
-        final bool loggedIn = authService.currentUser != null;
+      redirect: (context, state) {
+        final user = authService.currentUser;
+        final isAuth = user != null;
+        final isVerified = user?.emailVerified ?? false;
 
-        final publicPages = [
-          '/login',
-          '/signup',
-          '/forgot-password',
-          '/terms',
-          '/privacy-policy'
-        ];
-        final isPublicPage = publicPages.contains(state.matchedLocation);
+        final loggingIn = state.matchedLocation == '/login';
+        final signingUp = state.matchedLocation == '/signup';
+        final forgotPassword = state.matchedLocation == '/forgot-password';
+        final terms = state.matchedLocation == '/terms';
+        final privacy = state.matchedLocation == '/privacy-policy';
 
-        if (!loggedIn && !isPublicPage) {
-          return '/login';
+        final unauthenticatedRoutes =
+            loggingIn || signingUp || forgotPassword || terms || privacy;
+
+        if (!isAuth) {
+          return unauthenticatedRoutes ? null : '/login';
         }
 
-        if (loggedIn && (isPublicPage || state.matchedLocation == '/verify-email')) {
-           if (authService.currentUser!.emailVerified) {
-             return '/';
-           }
+        if (isAuth && !isVerified) {
+          return state.matchedLocation == '/verify-email' ? null : '/verify-email';
         }
-        
-        if (loggedIn && !authService.currentUser!.emailVerified && state.matchedLocation != '/verify-email') {
-          return '/verify-email';
+
+        if (isAuth && isVerified && (loggingIn || signingUp)) {
+          return '/';
         }
 
         return null;
       },
-      routes: <RouteBase>[
+      routes: [
         GoRoute(
           path: '/',
           builder: (context, state) => const HomeScreen(),
-          routes: [
-            GoRoute(
-              path: 'delivery-details/:deliveryId',
-              builder: (context, state) {
-                final deliveryId = state.pathParameters['deliveryId']!;
-                return DeliveryDetailsScreen(deliveryId: deliveryId);
-              },
-            ),
-             GoRoute(
-              path: 'details/:deliveryId',
-              builder: (context, state) {
-                final deliveryId = state.pathParameters['deliveryId']!;
-                return DeliveryDetailsScreen(deliveryId: deliveryId);
-              },
-            ),
-            GoRoute(
-              path: 'chat/:deliveryId',
-              builder: (context, state) {
-                final deliveryId = state.pathParameters['deliveryId']!;
-                return ChatScreen(deliveryId: deliveryId);
-              },
-            ),
-          ],
         ),
         GoRoute(
           path: '/login',
@@ -160,40 +141,60 @@ class AppRouter extends StatelessWidget {
         ),
         GoRoute(
           path: '/signup',
-          builder: (context, state) => const SignUpScreen(),
+          builder: (context, state) => const SignupScreen(),
         ),
         GoRoute(
           path: '/forgot-password',
           builder: (context, state) => const ForgotPasswordScreen(),
         ),
         GoRoute(
-          path: '/client-deliveries',
-          builder: (context, state) => const ClientDeliveriesScreen(),
+          path: '/verify-email',
+          builder: (context, state) => const VerifyEmailScreen(),
+        ),
+        GoRoute(
+          path: '/home',
+          builder: (context, state) => const HomeScreen(),
+        ),
+        GoRoute(
+          path: '/new-delivery',
+          builder: (context, state) => const NewDeliveryScreen(),
+        ),
+        GoRoute(
+          path: '/delivery-details/:id',
+          builder: (context, state) =>
+              DeliveryDetailsScreen(deliveryId: state.pathParameters['id']!),
+        ),
+        GoRoute(
+          path: '/details/:id',
+          builder: (context, state) =>
+              DetailsScreen(id: state.pathParameters['id']!),
         ),
         GoRoute(
           path: '/my-deliveries',
           builder: (context, state) => const MyDeliveriesScreen(),
         ),
         GoRoute(
+          path: '/client-deliveries',
+          builder: (context, state) => const ClientDeliveriesScreen(),
+        ),
+        GoRoute(
+          path: '/profile',
+          builder: (context, state) => const ProfileScreen(),
+          routes: [
+            GoRoute(
+              path: 'edit',
+              builder: (context, state) => const EditProfileScreen(),
+            ),
+          ],
+        ),
+        GoRoute(
           path: '/notifications',
           builder: (context, state) => const NotificationsScreen(),
         ),
         GoRoute(
-            path: '/profile',
-            builder: (context, state) => const ProfileScreen(),
-            routes: [
-              GoRoute(
-                path: 'edit',
-                builder: (context, state) => const EditProfileScreen(),
-              ),
-            ]),
-        GoRoute(
-          path: '/new-delivery',
-          builder: (context, state) => const NewDeliveryScreen(),
-        ),
-        GoRoute(
-          path: '/verify-email',
-          builder: (context, state) => const VerifyEmailScreen(),
+          path: '/chat/:deliveryId',
+          builder: (context, state) =>
+              ChatScreen(deliveryId: state.pathParameters['deliveryId']!),
         ),
         GoRoute(
           path: '/terms',
@@ -210,19 +211,13 @@ class AppRouter extends StatelessWidget {
       builder: (context, themeProvider, child) {
         return MaterialApp.router(
           title: 'Afercon Xpress',
-          theme: ThemeData(
-            brightness: Brightness.light,
-            primarySwatch: Colors.blue,
-            visualDensity: VisualDensity.adaptivePlatformDensity,
-          ),
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            primarySwatch: Colors.blue,
-            visualDensity: VisualDensity.adaptivePlatformDensity,
-          ),
           themeMode: themeProvider.themeMode,
+          theme: ThemeData(
+            primarySwatch: Colors.blue,
+            visualDensity: VisualDensity.adaptivePlatformDensity,
+          ),
+          darkTheme: ThemeData.dark(),
           routerConfig: router,
-          debugShowCheckedModeBanner: false,
         );
       },
     );
@@ -231,16 +226,6 @@ class AppRouter extends StatelessWidget {
 
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
-    _subscription = stream.asBroadcastStream().listen(
-      (dynamic _) => notifyListeners(),
-    );
-  }
-
-  late final StreamSubscription<dynamic> _subscription;
-
-  @override
-  void dispose() {
-    _subscription.cancel();
-    super.dispose();
+    stream.asBroadcastStream().listen((_) => notifyListeners());
   }
 }

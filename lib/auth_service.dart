@@ -25,8 +25,8 @@ class AuthService {
     try {
       await _firebaseAuth.sendPasswordResetEmail(email: email);
       return "Success";
-    } on FirebaseAuthException catch (e) {
-      return e.message;
+    } catch (e) {
+      return e.toString();
     }
   }
 
@@ -44,27 +44,15 @@ class AuthService {
   }
 
   Stream<Delivery?> getDeliveryStream(String deliveryId) {
-    final controller = StreamController<Delivery?>();
-    final subscription = _firestore
-        .collection('deliveries')
-        .doc(deliveryId)
-        .snapshots()
-        .listen((snapshot) {
+    return _firestore.collection('deliveries').doc(deliveryId).snapshots().map((snapshot) {
       if (snapshot.exists && snapshot.data() != null) {
-        controller.add(Delivery.fromMap(snapshot.id, snapshot.data()!));
+        return Delivery.fromMap(snapshot.id, snapshot.data()!);
       } else {
-        controller.add(null);
+        return null;
       }
-    }, onError: (e, s) {
-      developer.log('Erro no stream da entrega', name: 'auth_service', error: e, stackTrace: s);
-      controller.addError(e, s);
+    }).handleError((e, s) {
+       developer.log('Erro no stream da entrega', name: 'auth_service', error: e, stackTrace: s);
     });
-
-    controller.onCancel = () {
-      subscription.cancel();
-    };
-
-    return controller.stream;
   }
 
   Future<AppUser?> getUserDetails(String uid) async {
@@ -84,8 +72,8 @@ class AuthService {
     try {
       await _firebaseAuth.signInWithEmailAndPassword(email: email, password: password);
       return "Success";
-    } on FirebaseAuthException catch (e) {
-      return e.message;
+    } catch (e) {
+      return e.toString();
     }
   }
 
@@ -131,8 +119,78 @@ class AuthService {
         return "Success";
       }
       return 'Utilizador não foi criado.';
-    } on FirebaseAuthException catch (e) {
-      return e.message;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+    Future<String?> acceptDelivery(Delivery delivery, User driver) async {
+    try {
+      final driverData = await getUserDetails(driver.uid);
+      if (driverData == null) {
+        return "Não foi possível carregar os dados do motorista para verificação.";
+      }
+
+      // Regra de Segurança: Garante que o perfil do motorista está 100% completo.
+      final isDriverProfileComplete = (driverData.vehicleType?.isNotEmpty ?? false) && 
+                                      (driverData.vehicleMake?.isNotEmpty ?? false) &&
+                                      (driverData.vehicleModel?.isNotEmpty ?? false) &&
+                                      (driverData.vehicleYear != null) &&
+                                      (driverData.vehiclePlate?.isNotEmpty ?? false) &&
+                                      (driverData.vehicleColor?.isNotEmpty ?? false) &&
+                                      (driverData.driverLicenseNumber?.isNotEmpty ?? false);
+
+      if (!isDriverProfileComplete) {
+        // Retorna um código específico para a UI saber que o perfil está incompleto.
+        return "Perfil Incompleto"; 
+      }
+
+      if (delivery.userId == driver.uid) {
+        return "Não pode aceitar a sua própria entrega.";
+      }
+
+      // Regra de Segurança: Verifica se o motorista já tem uma entrega ativa.
+      final activeDeliveriesQuery = await _firestore
+          .collection('deliveries')
+          .where('driverId', isEqualTo: driver.uid)
+          .where('status', whereIn: [
+              DeliveryStatus.inProgress.name, 
+              DeliveryStatus.pendingConfirmation.name,
+              DeliveryStatus.cancellationRequestedByClient.name,
+              DeliveryStatus.cancellationRequestedByDriver.name
+            ])
+          .limit(1)
+          .get();
+
+      if (activeDeliveriesQuery.docs.isNotEmpty) {
+        // Retorna um código específico para a UI saber que já existe uma entrega ativa.
+        return "Entrega Ativa"; 
+      }
+      
+      // Partilha de Confiança: Cria o mapa com as informações a serem partilhadas.
+      final driverInfo = {
+        'fullName': driverData.fullName,
+        'phoneNumber': driverData.phoneNumber,
+        'vehicleType': driverData.vehicleType,
+        'vehicleMake': driverData.vehicleMake,
+        'vehicleModel': driverData.vehicleModel,
+        'vehicleYear': driverData.vehicleYear,
+        'vehiclePlate': driverData.vehiclePlate,
+        'vehicleColor': driverData.vehicleColor,
+        // O número da carta de condução (driverLicenseNumber) NÃO é incluído.
+      };
+
+      // Atualiza a entrega com os dados do motorista e o novo estado.
+      await _firestore.collection('deliveries').doc(delivery.id).update({
+        'driverId': driver.uid,
+        'status': DeliveryStatus.inProgress.name,
+        'driverInfo': driverInfo, // Adiciona o mapa de informações à entrega.
+      });
+
+      return "Success";
+    } catch (e, s) {
+      developer.log('Erro ao aceitar entrega', name: 'auth_service', error: e, stackTrace: s);
+      return e.toString();
     }
   }
 
@@ -178,12 +236,9 @@ class AuthService {
       });
 
       return "Success";
-    } on FirebaseException catch (e) {
-      developer.log('Erro ao solicitar cancelamento', name: 'auth_service', error: e);
-      return e.message ?? "Erro desconhecido ao solicitar cancelamento.";
     } catch (e) {
-      developer.log('Erro inesperado ao solicitar cancelamento', name: 'auth_service', error: e);
-      return "Ocorreu um erro inesperado.";
+      developer.log('Erro ao solicitar cancelamento', name: 'auth_service', error: e);
+      return e.toString();
     }
   }
 
@@ -200,15 +255,14 @@ class AuthService {
         final isDriver = user.uid == delivery.driverId;
 
         if (delivery.status == DeliveryStatus.cancellationRequestedByDriver && isClient) {
-          // Cliente confirma o pedido do motorista. A entrega volta a estar disponível.
           transaction.update(deliveryRef, {
             'status': DeliveryStatus.available.name,
             'driverId': null,
             'cancellationReason': FieldValue.delete(),
+             'driverInfo': FieldValue.delete(), // Remove os dados do motorista
           });
           return "Cancelamento confirmado. A entrega está novamente disponível.";
         } else if (delivery.status == DeliveryStatus.cancellationRequestedByClient && isDriver) {
-          // Motorista confirma o pedido do cliente. A entrega é cancelada permanentemente.
           transaction.update(deliveryRef, {
             'status': DeliveryStatus.cancelled.name,
           });
@@ -217,12 +271,9 @@ class AuthService {
           return "Você não tem permissão para confirmar este cancelamento ou o estado da entrega não permite.";
         }
       });
-    } on FirebaseException catch (e) {
-      developer.log('Erro ao confirmar cancelamento', name: 'auth_service', error: e);
-      return e.message ?? "Erro desconhecido ao confirmar cancelamento.";
     } catch (e) {
-      developer.log('Erro inesperado ao confirmar cancelamento', name: 'auth_service', error: e);
-      return "Ocorreu um erro inesperado.";
+      developer.log('Erro ao confirmar cancelamento', name: 'auth_service', error: e);
+      return e.toString();
     }
   }
 
@@ -249,12 +300,9 @@ class AuthService {
       });
 
       return "Success";
-    } on FirebaseException catch (e) {
-      developer.log('Erro ao rejeitar cancelamento', name: 'auth_service', error: e);
-      return e.message ?? "Erro desconhecido ao rejeitar cancelamento.";
     } catch (e,s) {
-      developer.log('Erro inesperado ao rejeitar cancelamento', name: 'auth_service', error: e, stackTrace: s);
-      return "Ocorreu um erro inesperado.";
+      developer.log('Erro ao rejeitar cancelamento', name: 'auth_service', error: e, stackTrace: s);
+      return e.toString();
     }
   }
 
@@ -281,11 +329,8 @@ class AuthService {
         transaction.delete(deliveryRef);
         return "Success";
       });
-    } on FirebaseException catch (e) {
-      developer.log('Erro ao apagar entrega', name: 'auth_service', error: e);
-      return e.message ?? "Erro desconhecido ao apagar entrega.";
     } catch (e) {
-      developer.log('Erro inesperado ao apagar entrega', name: 'auth_service', error: e);
+      developer.log('Erro ao apagar entrega', name: 'auth_service', error: e);
       return e.toString();
     }
   }

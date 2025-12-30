@@ -1,16 +1,18 @@
-
-import 'package:flutter/material.dart';
+import 'dart:async';
+import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:provider/provider.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'auth_service.dart';
-import 'main.dart'; // Importa o main.dart para aceder ao ThemeProvider
 import 'models/delivery_model.dart';
 import 'models/user_model.dart';
+import 'theme_provider.dart';
 import 'utils/currency_formatter.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,21 +23,110 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final Stream<List<Delivery>> _availableDeliveriesStream = FirebaseFirestore
-      .instance
-      .collection('deliveries')
-      .where('status', isEqualTo: DeliveryStatus.available.name)
-      .orderBy('createdAt', descending: true)
-      .snapshots()
-      .map((snapshot) => snapshot.docs
-          .map((doc) => Delivery.fromMap(doc.id, doc.data()))
-          .toList());
+  Stream<List<Delivery>>? _availableDeliveriesStream;
+  Stream<bool>? _hasActiveClientDeliveryStream;
+  Stream<bool>? _hasActiveDriverDeliveryStream;
+
+  @override
+  void initState() {
+    super.initState();
+    _requestNotificationPermission();
+    _setupStreams();
+  }
+
+  void _setupStreams() {
+    final authService = context.read<AuthService>();
+    final userId = authService.currentUser?.uid;
+
+    if (userId == null) return;
+
+    // Stream para entregas disponíveis (para motoristas)
+    try {
+      final availableStream = FirebaseFirestore.instance
+          .collection('deliveries')
+          .where('status', isEqualTo: DeliveryStatus.available.name)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) => snapshot.docs
+              .map((doc) => Delivery.fromMap(doc.id, doc.data()))
+              .toList());
+      if (mounted) {
+        setState(() {
+          _availableDeliveriesStream = availableStream;
+        });
+      }
+    } catch (e, s) {
+      developer.log('Falha ao configurar o stream de entregas disponíveis', name: 'HomeScreen', error: e, stackTrace: s);
+    }
+
+    // Status considerados "ativos"
+    final activeStatuses = [
+      DeliveryStatus.inProgress.name,
+      DeliveryStatus.pendingConfirmation.name,
+      DeliveryStatus.cancellationRequestedByClient.name,
+      DeliveryStatus.cancellationRequestedByDriver.name
+    ];
+
+    // Stream para verificar entregas ativas como CLIENTE
+    try {
+      final clientStream = FirebaseFirestore.instance
+          .collection('deliveries')
+          .where('userId', isEqualTo: userId) // Corrigido de 'clientId' para 'userId'
+          .where('status', whereIn: activeStatuses) // Corrigido para usar os status corretos
+          .limit(1)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.isNotEmpty)
+          .handleError((error, stackTrace) {
+            developer.log('Erro no stream de entregas ativas do cliente', name: 'HomeScreen', error: error, stackTrace: stackTrace);
+            return false;
+          });
+      if (mounted) {
+        setState(() {
+          _hasActiveClientDeliveryStream = clientStream;
+        });
+      }
+    } catch (e, s) {
+      developer.log('Falha ao configurar o stream de entregas ativas do cliente', name: 'HomeScreen', error: e, stackTrace: s);
+    }
+
+    // Stream para verificar entregas ativas como MOTORISTA
+    try {
+      final driverStream = FirebaseFirestore.instance
+          .collection('deliveries')
+          .where('driverId', isEqualTo: userId)
+          .where('status', whereIn: activeStatuses) // Corrigido para usar os status corretos
+          .limit(1)
+          .snapshots()
+          .map((snapshot) => snapshot.docs.isNotEmpty)
+          .handleError((error, stackTrace) {
+             developer.log('Erro no stream de entregas ativas do motorista', name: 'HomeScreen', error: error, stackTrace: stackTrace);
+             return false;
+          });
+      if (mounted) {
+        setState(() {
+          _hasActiveDriverDeliveryStream = driverStream;
+        });
+      }
+    } catch (e, s) {
+       developer.log('Falha ao configurar o stream de entregas ativas do motorista', name: 'HomeScreen', error: e, stackTrace: s);
+    }
+  }
+
+
+  Future<void> _requestNotificationPermission() async {
+    final status = await Permission.notification.status;
+    if (status.isDenied) {
+      await Permission.notification.request();
+    }
+  }
 
   Future<void> _acceptDelivery(Delivery delivery) async {
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
     final authService = context.read<AuthService>();
-    final theme = Theme.of(context);
+    final driver = authService.currentUser;
+
+    if (driver == null) return;
 
     final bool? confirmed = await showDialog<bool>(
       context: context,
@@ -45,112 +136,68 @@ class _HomeScreenState extends State<HomeScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Tem a certeza de que deseja aceitar esta entrega?'),
+             const Text('Tem a certeza de que deseja aceitar esta entrega?'),
             const SizedBox(height: 16),
-            _buildDialogInfo(
-                icon: Icons.location_on,
-                label: 'Recolha:',
-                value: delivery.pickupAddress),
+            _buildDialogInfo(icon: Icons.location_on, label: 'Recolha:', value: delivery.pickupAddress),
             const SizedBox(height: 8),
-            _buildDialogInfo(
-                icon: Icons.flag,
-                label: 'Destino:',
-                value: delivery.deliveryAddress),
+            _buildDialogInfo(icon: Icons.flag, label: 'Destino:', value: delivery.deliveryAddress),
             const SizedBox(height: 8),
-            _buildDialogInfo(
-                icon: Icons.payment,
-                label: 'Valor a Receber:',
-                value: CurrencyFormatter.format(delivery.totalPrice),
-                valueColor: theme.colorScheme.primary),
+            _buildDialogInfo(icon: Icons.payment, label: 'Valor a Receber:', value: CurrencyFormatter.format(delivery.totalPrice), valueColor: Theme.of(context).colorScheme.primary),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancelar'),
-          ),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Cancelar')),
           ElevatedButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              foregroundColor: Colors.white,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
             child: const Text('Confirmar e Aceitar'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) {
-      return;
-    }
+    if (confirmed != true) return;
 
-    final driverId = authService.currentUser?.uid;
-    if (driverId == null) return;
+    final result = await authService.acceptDelivery(delivery, driver);
 
-    final AppUser? driverData = await authService.getUserDetails(driverId);
-    
     if (!mounted) return;
 
-    final isDriverProfileComplete = driverData != null &&
-                                    (driverData.vehicleType?.isNotEmpty ?? false) &&
-                                    (driverData.vehicleMake?.isNotEmpty ?? false);
-
-    if (!isDriverProfileComplete) {
-      showDialog(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: const Text('Perfil de Motorista Incompleto'),
-          content: const Text(
-              'Para aceitar entregas, precisa de preencher todas as informações do seu veículo no seu perfil.'),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('Cancelar'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.of(dialogContext).pop();
-                router.push('/profile/edit');
-              },
-              child: const Text('Completar Perfil'),
-            ),
-          ],
-        ),
-      );
-      return;
-    }
-
-    if (delivery.userId == driverId) {
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-            content: Text('Não pode aceitar a sua própria entrega.')),
-      );
-      return;
-    }
-
-    try {
-      await FirebaseFirestore.instance
-          .collection('deliveries')
-          .doc(delivery.id)
-          .update({
-        'driverId': driverId,
-        'status': DeliveryStatus.inProgress.name,
-      });
-
-      if (!mounted) return;
-
-      scaffoldMessenger.showSnackBar(
-        const SnackBar(
-          content: Text('Entrega aceite com sucesso!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-      router.go('/delivery-details/${delivery.id}');
-    } catch (e) {
-        if (mounted) {
-             scaffoldMessenger.showSnackBar(SnackBar(content: Text('Erro ao aceitar: $e')));
-        }
+    switch (result) {
+      case "Success":
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text('Entrega aceite com sucesso!'), backgroundColor: Colors.green),
+        );
+        router.go('/delivery-details/${delivery.id}');
+        break;
+      case "Perfil Incompleto":
+        showDialog(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Perfil de Motorista Incompleto'),
+            content: const Text('Para aceitar entregas, precisa de preencher todas as informações do seu veículo no seu perfil.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(dialogContext).pop(), child: const Text('Cancelar')),
+              ElevatedButton(
+                onPressed: () {
+                  Navigator.of(dialogContext).pop();
+                  router.push('/profile/edit');
+                },
+                child: const Text('Completar Perfil'),
+              ),
+            ],
+          ),
+        );
+        break;
+      case "Entrega Ativa":
+        scaffoldMessenger.showSnackBar(
+          const SnackBar(content: Text('Você já tem uma entrega em andamento. Finalize-a antes de aceitar uma nova.'), backgroundColor: Colors.orange),
+        );
+        break;
+      default:
+        scaffoldMessenger.showSnackBar(
+          SnackBar(content: Text(result ?? 'Ocorreu um erro desconhecido.')),
+        );
+        break;
     }
   }
 
@@ -168,10 +215,8 @@ class _HomeScreenState extends State<HomeScreen> {
               Text(label, style: theme.textTheme.bodySmall),
               Text(
                 value,
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: valueColor,
-                ),
+                style: theme.textTheme.bodyMedium
+                    ?.copyWith(fontWeight: FontWeight.bold, color: valueColor),
               ),
             ],
           ),
@@ -184,7 +229,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final authService = context.read<AuthService>();
-    final themeProvider = context.watch<ThemeProvider>(); // Ouve as alterações do tema
+    final themeProvider = context.watch<ThemeProvider>();
 
     return Scaffold(
       appBar: AppBar(
@@ -204,7 +249,6 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         actions: [
           IconButton(
-            // Ícone dinâmico com base no tema
             icon: Icon(
               themeProvider.themeMode == ThemeMode.dark
                   ? Icons.light_mode_outlined
@@ -212,10 +256,9 @@ class _HomeScreenState extends State<HomeScreen> {
               color: Colors.white,
             ),
             tooltip: 'Alterar Tema',
-            // Chama o método para alterar o tema
             onPressed: () => context.read<ThemeProvider>().toggleTheme(),
           ),
-          const _NotificationBadge(), // Ícone de notificação com contador
+          const _NotificationBadge(),
           IconButton(
             icon: const Icon(Icons.account_circle_outlined, color: Colors.white),
             tooltip: 'Perfil',
@@ -233,38 +276,39 @@ class _HomeScreenState extends State<HomeScreen> {
           const _GreetingCard(),
           const _AferconPayBanner(),
           Expanded(
-            child: StreamBuilder<List<Delivery>>(
-              stream: _availableDeliveriesStream,
-              builder: (context, snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                      child:
-                          Text('Ocorreu um erro: ${snapshot.error}'));
-                }
-                final deliveries = snapshot.data ?? [];
-                if (deliveries.isEmpty) {
-                  return const Center(
-                      child:
-                          Text('Nenhuma entrega disponível de momento.'));
-                }
+            child: _availableDeliveriesStream == null
+                ? const Center(child: CircularProgressIndicator())
+                : StreamBuilder<List<Delivery>>(
+                    stream: _availableDeliveriesStream,
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      if (snapshot.hasError) {
+                        return Center(
+                            child: Text('Ocorreu um erro: ${snapshot.error}'));
+                      }
+                      final deliveries = snapshot.data ?? [];
+                      if (deliveries.isEmpty) {
+                        return const Center(
+                            child: Text('Nenhuma entrega disponível de momento.'));
+                      }
 
-                return ListView.builder(
-                  padding: const EdgeInsets.symmetric(vertical: 8.0),
-                  itemCount: deliveries.length,
-                  itemBuilder: (context, index) {
-                    final delivery = deliveries[index];
-                    return DeliveryCard(
-                      delivery: delivery,
-                      onAccept: () => _acceptDelivery(delivery),
-                      onTap: () => context.go('/delivery-details/${delivery.id}'),
-                    );
-                  },
-                );
-              },
-            ),
+                      return ListView.builder(
+                        padding: const EdgeInsets.symmetric(vertical: 8.0),
+                        itemCount: deliveries.length,
+                        itemBuilder: (context, index) {
+                          final delivery = deliveries[index];
+                          return DeliveryCard(
+                            delivery: delivery,
+                            onAccept: () => _acceptDelivery(delivery),
+                            onTap: () =>
+                                context.push('/delivery-details/${delivery.id}'),
+                          );
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -274,15 +318,17 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: <Widget>[
-            IconButton(
-              icon: const Icon(Icons.list_alt),
+             _BottomAppBarButton(
+              icon: Icons.list_alt,
               tooltip: 'Minhas Entregas (Cliente)',
               onPressed: () => context.push('/client-deliveries'),
+              hasActiveStream: _hasActiveClientDeliveryStream ?? Stream.value(false),
             ),
-            IconButton(
-              icon: const Icon(Icons.delivery_dining),
+            _BottomAppBarButton(
+              icon: Icons.delivery_dining,
               tooltip: 'Minhas Entregas (Motorista)',
               onPressed: () => context.push('/my-deliveries'),
+               hasActiveStream: _hasActiveDriverDeliveryStream ?? Stream.value(false),
             ),
           ],
         ),
@@ -299,6 +345,58 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ... (todos os outros widgets permanecem os mesmos)
+
+class _BottomAppBarButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+  final Stream<bool> hasActiveStream;
+
+  const _BottomAppBarButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    required this.hasActiveStream,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<bool>(
+      stream: hasActiveStream,
+      initialData: false,
+      builder: (context, snapshot) {
+        final bool hasActive = snapshot.data ?? false;
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: Icon(icon),
+              tooltip: tooltip,
+              onPressed: onPressed,
+            ),
+            if (hasActive)
+              Positioned(
+                top: 4,
+                right: 4,
+                child: Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: Colors.red,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Theme.of(context).bottomAppBarTheme.color ?? Colors.white, width: 1.5),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ... (todos os outros widgets, _NotificationBadge, _AferconPayBanner, etc. permanecem os mesmos)
 class _NotificationBadge extends StatelessWidget {
   const _NotificationBadge();
 
@@ -460,7 +558,8 @@ class _GreetingCard extends StatelessWidget {
       builder: (context, snapshot) {
         final user = snapshot.data;
         final userName = user?.fullName ?? 'Utilizador';
-        final isDriver = user?.vehicleType != null && user!.vehicleType!.isNotEmpty;
+        final isDriver =
+            user?.vehicleType != null && user!.vehicleType!.isNotEmpty;
 
         final subtext = isDriver
             ? 'Aqui estão as novas oportunidades de entrega.'
@@ -509,7 +608,6 @@ class _GreetingCard extends StatelessWidget {
     );
   }
 }
-
 
 class DeliveryCard extends StatelessWidget {
   final Delivery delivery;
@@ -565,14 +663,16 @@ class DeliveryCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              _buildRouteInfo(theme, delivery.pickupAddress, delivery.deliveryAddress),
+              _buildRouteInfo(
+                  theme, delivery.pickupAddress, delivery.deliveryAddress),
               const Divider(height: 32),
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.timer_outlined, size: 16, color: theme.textTheme.bodySmall?.color),
+                      Icon(Icons.timer_outlined,
+                          size: 16, color: theme.textTheme.bodySmall?.color),
                       const SizedBox(width: 6),
                       Text(
                         'Criado às ${timeFormat.format(delivery.createdAt)}',
@@ -580,7 +680,6 @@ class DeliveryCard extends StatelessWidget {
                       ),
                     ],
                   ),
-
                   ElevatedButton(
                     onPressed: onAccept,
                     style: ElevatedButton.styleFrom(
@@ -589,9 +688,11 @@ class DeliveryCard extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30),
                       ),
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                     ),
-                    child: const Text('Aceitar', style: TextStyle(fontWeight: FontWeight.bold)),
+                    child: const Text('Aceitar',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),

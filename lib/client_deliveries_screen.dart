@@ -1,4 +1,4 @@
-
+import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -11,14 +11,24 @@ class ClientDeliveriesScreen extends StatelessWidget {
   const ClientDeliveriesScreen({super.key});
 
   Stream<List<Delivery>> _getClientDeliveriesStream(String userId) {
-    return FirebaseFirestore.instance
-        .collection('deliveries')
-        .where('userId', isEqualTo: userId)
-        .orderBy('createdAt', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs
-            .map((doc) => Delivery.fromMap(doc.id, doc.data()))
-            .toList());
+    try {
+      return FirebaseFirestore.instance
+          .collection('deliveries')
+          .where('userId', isEqualTo: userId)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .map((snapshot) => snapshot.docs
+              .map((doc) => Delivery.fromMap(doc.id, doc.data()))
+              .toList());
+    } catch (e, s) {
+      developer.log(
+        'Failed to get client deliveries stream',
+        name: 'ClientDeliveriesScreen',
+        error: e,
+        stackTrace: s,
+      );
+      return Stream.error(e);
+    }
   }
 
   String _getStatusText(DeliveryStatus status) {
@@ -130,7 +140,7 @@ class ClientDeliveriesScreen extends StatelessWidget {
                           Text(CurrencyFormatter.format(delivery.totalPrice)),
                         ],
                       ),
-                      onTap: () => context.push('/details/${delivery.id}'),
+                      onTap: () => context.push('/delivery-details/${delivery.id}'), // CORRIGIDO
                       isThreeLine: true,
                     ),
                   );

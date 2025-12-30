@@ -1,11 +1,13 @@
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:badges/badges.dart' as badges;
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'auth_service.dart';
 import 'models/delivery_model.dart';
-import 'models/user_model.dart';
 import 'utils/currency_formatter.dart';
 
 class DeliveryDetailsScreen extends StatefulWidget {
@@ -103,6 +105,9 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
 
         final delivery = snapshot.data!;
         final isDriver = currentUser?.uid == delivery.driverId;
+        final isClient = currentUser?.uid == delivery.userId;
+
+        final canChat = (isClient || isDriver) && delivery.status == DeliveryStatus.inProgress;
 
         return Scaffold(
           appBar: AppBar(
@@ -156,17 +161,45 @@ class _DeliveryDetailsScreenState extends State<DeliveryDetailsScreen> {
                     _PriceRow(price: delivery.price),
                   ],
                 ),
-                if (delivery.driverId != null)
-                  _DriverInfo(delivery: delivery),
+                // Usa o novo widget _DriverInfoCard que lê de delivery.driverInfo
+                if (delivery.driverInfo != null)
+                  _DriverInfoCard(driverInfo: delivery.driverInfo!),
               ],
             ),
           ),
+          floatingActionButton: canChat
+              ? StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('deliveries')
+                      .doc(widget.deliveryId)
+                      .collection('messages')
+                      .snapshots(),
+                  builder: (context, snapshot) {
+                    final messageCount = snapshot.data?.docs.length ?? 0;
+                    return badges.Badge(
+                      badgeContent: Text(
+                        '$messageCount',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      showBadge: messageCount > 0,
+                      position: badges.BadgePosition.topEnd(top: -12, end: -10),
+                      child: FloatingActionButton(
+                        onPressed: () => context.push('/chat/${delivery.id}'),
+                        backgroundColor: Colors.green,
+                        tooltip: 'Conversar sobre a entrega',
+                        child: const Icon(Icons.chat_bubble_outline, color: Colors.white),
+                      ),
+                    );
+                  })
+              : null,
           bottomNavigationBar: _ActionBottomBar(delivery: delivery, onStateChange: () => setState(() {})),
         );
       },
     );
   }
 }
+
+// ... (Outros widgets como _HeaderCard, _RouteTimeline, etc permanecem os mesmos)
 
 class _HeaderCard extends StatelessWidget {
   final Delivery delivery;
@@ -412,71 +445,69 @@ class _PriceRow extends StatelessWidget {
   }
 }
 
-class _DriverInfo extends StatelessWidget {
-  final Delivery delivery;
-  const _DriverInfo({required this.delivery});
+// Widget refeito para usar o mapa de informações do motorista
+class _DriverInfoCard extends StatelessWidget {
+  final Map<String, dynamic> driverInfo;
+  const _DriverInfoCard({required this.driverInfo});
 
   IconData _getVehicleIcon(String? vehicleType) {
-    if (vehicleType == 'motorcycle') return Icons.two_wheeler;
-    return Icons.directions_car;
+    // Lógica para determinar o ícone com base no tipo de veículo
+    final type = vehicleType?.toLowerCase() ?? '';
+    if (type.contains('mota') || type.contains('motorcycle')) return Icons.two_wheeler;
+    if (type.contains('bicicleta') || type.contains('bike')) return Icons.pedal_bike;
+    return Icons.directions_car; // Ícone padrão para carro ou outros
   }
 
   @override
   Widget build(BuildContext context) {
-    final authService = context.read<AuthService>();
-    return FutureBuilder<AppUser?>(
-      future: authService.getUserDetails(delivery.driverId!),
-      builder: (context, driverSnapshot) {
-        if (!driverSnapshot.hasData) {
-          return const Center(child: Padding(padding: EdgeInsets.all(16.0), child: CircularProgressIndicator()));
-        }
-        if (driverSnapshot.hasError || driverSnapshot.data == null) {
-          return const _InfoCard(
-            title: 'Motorista',
-            icon: Icons.delivery_dining_outlined,
-            children: [_InfoRow(label: 'Erro', value: 'Não foi possível carregar os dados do motorista.')],
-          );
-        }
+    final fullName = driverInfo['fullName'] as String? ?? 'Nome não disponível';
+    final phoneNumber = driverInfo['phoneNumber'] as String? ?? '-';
+    final vehicleType = driverInfo['vehicleType'] as String?;
+    final vehicleMake = driverInfo['vehicleMake'] as String? ?? '';
+    final vehicleModel = driverInfo['vehicleModel'] as String? ?? '';
+    final vehicleColor = driverInfo['vehicleColor'] as String? ?? '';
+    final vehicleYear = driverInfo['vehicleYear']?.toString() ?? '';
+    final vehiclePlate = driverInfo['vehiclePlate'] as String? ?? '-';
 
-        final driver = driverSnapshot.data!;
-        
-        return _InfoCard(
-          title: 'Motorista Responsável',
-          icon: _getVehicleIcon(driver.vehicleType),
-          children: [
-            _InfoRow(label: 'Nome', value: driver.fullName),
-             _InfoRow(
-                label: 'Contacto', 
-                value: driver.phoneNumber, 
-                isPhone: true, 
-                onPhoneTap: () async {
-                  final Uri telUri = Uri.parse('tel:${driver.phoneNumber}');
-                   if (await canLaunchUrl(telUri)) {
-                    await launchUrl(telUri);
-                  }
-                }
-            ),
-            if(driver.vehicleMake != null && driver.vehicleModel != null)
-               _InfoRow(label: 'Veículo', value: '${driver.vehicleMake} ${driver.vehicleModel}'),
-            if(driver.vehicleColor != null && driver.vehicleYear != null)
-                _InfoRow(label: 'Cor e Ano', value: '${driver.vehicleColor} (${driver.vehicleYear})'),
-            if(driver.vehiclePlate != null)
-                _InfoRow(label: 'Matrícula', value: driver.vehiclePlate!),
-          ],
-        );
-      },
+    return _InfoCard(
+      title: 'Motorista Responsável',
+      icon: _getVehicleIcon(vehicleType),
+      children: [
+        _InfoRow(label: 'Nome', value: fullName),
+        _InfoRow(
+          label: 'Contacto', 
+          value: phoneNumber,
+          isPhone: true, 
+          onPhoneTap: () async {
+            if (phoneNumber != '-') {
+              final Uri telUri = Uri.parse('tel:$phoneNumber');
+              if (await canLaunchUrl(telUri)) {
+                  await launchUrl(telUri);
+              }
+            }
+          }
+        ),
+        _InfoRow(label: 'Veículo', value: '$vehicleMake $vehicleModel'.trim()),
+        if (vehicleColor.isNotEmpty && vehicleYear.isNotEmpty)
+          _InfoRow(label: 'Cor e Ano', value: '$vehicleColor ($vehicleYear)'),
+        _InfoRow(label: 'Matrícula', value: vehiclePlate),
+      ],
     );
   }
 }
 
 class _ActionBottomBar extends StatelessWidget {
-  final Delivery delivery;
+  // ... (código existente sem alterações)
+    final Delivery delivery;
   final VoidCallback onStateChange;
 
   const _ActionBottomBar({required this.delivery, required this.onStateChange});
 
   Future<void> _deleteDelivery(BuildContext context) async {
     final authService = context.read<AuthService>();
+    final currentUser = authService.currentUser;
+    if (currentUser == null) return;
+
     final scaffoldMessenger = ScaffoldMessenger.of(context);
     final router = GoRouter.of(context);
 
@@ -485,7 +516,7 @@ class _ActionBottomBar extends StatelessWidget {
       builder: (dialogContext) => AlertDialog(
         title: const Text('Apagar Anúncio'),
         content: const Text(
-            'Tem a certeza de que deseja apagar permanentemente este anúncio?\\n\\nEsta ação não pode ser desfeita.'),
+            'Tem a certeza de que deseja apagar permanentemente este anúncio?\n\nEsta ação não pode ser desfeita.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
@@ -502,7 +533,7 @@ class _ActionBottomBar extends StatelessWidget {
     );
 
     if (confirmed == true) {
-      final result = await authService.deleteDelivery(delivery.id);
+      final result = await authService.deleteDelivery(currentUser, delivery.id);
       if (!context.mounted) return;
 
       if (result == "Success") {
@@ -594,7 +625,6 @@ class _ActionBottomBar extends StatelessWidget {
   }
 }
 
-
 class _CancellationInfo extends StatefulWidget {
     final Delivery delivery;
     const _CancellationInfo({required this.delivery});
@@ -608,6 +638,9 @@ class _CancellationInfoState extends State<_CancellationInfo> {
 
     void _showCancellationDialog(BuildContext context, String deliveryId) {
         final authService = context.read<AuthService>();
+        final currentUser = authService.currentUser;
+        if (currentUser == null) return;
+        
         final scaffoldMessenger = ScaffoldMessenger.of(context);
 
         showDialog(
@@ -625,7 +658,7 @@ class _CancellationInfoState extends State<_CancellationInfo> {
                         ElevatedButton(
                             onPressed: () async {
                                 final reason = _reasonController.text;
-                                final result = await authService.requestCancellation(deliveryId, reason);
+                                final result = await authService.requestCancellation(currentUser, deliveryId, reason);
                                 
                                 if (!context.mounted) return;
                                 Navigator.of(dialogContext).pop();
@@ -710,6 +743,9 @@ class _CancellationConfirmationCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final authService = context.read<AuthService>();
+    final currentUser = authService.currentUser;
+    if (currentUser == null) return const SizedBox.shrink();
+
     final theme = Theme.of(context);
     final scaffoldMessenger = ScaffoldMessenger.of(context);
 
@@ -737,7 +773,7 @@ class _CancellationConfirmationCard extends StatelessWidget {
                 children: [
                   TextButton(
                     onPressed: () async {
-                        final result = await authService.rejectCancellation(deliveryId);
+                        final result = await authService.rejectCancellation(currentUser, deliveryId);
                         if(result != 'Success' && context.mounted) {
                              scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro ao rejeitar.')));
                         }
@@ -746,7 +782,7 @@ class _CancellationConfirmationCard extends StatelessWidget {
                   ),
                   ElevatedButton(
                     onPressed: () async {
-                       final result = await authService.confirmCancellation(deliveryId);
+                       final result = await authService.confirmCancellation(currentUser, deliveryId);
                        if(result != 'Success' && context.mounted) {
                            scaffoldMessenger.showSnackBar(SnackBar(content: Text(result ?? 'Erro ao confirmar.')));
                        }

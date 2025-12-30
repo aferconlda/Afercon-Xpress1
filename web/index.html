@@ -1,19 +1,6 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
-
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
-
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
-
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
   <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
@@ -21,7 +8,7 @@
   <meta name="description" content="Afercon Xpress: Entregas rápidas e seguras. Conecte-se a motoristas, envie as suas encomendas e acompanhe o percurso em tempo real. Simples, rápido e fiável.">
 
   <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Afercon Xpress">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
@@ -31,8 +18,65 @@
 
   <title>Afercon Xpress</title>
   <link rel="manifest" href="manifest.json">
+
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=AW-16496818459"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'AW-16496818459');
+  </script>
+
+  <!-- Event snippet for Inscrição (1) conversion page -->
+  <script>
+    gtag('event', 'conversion', {'send_to': 'AW-16496818459/wVUOCPKx4rcbEJvypbo9'});
+  </script>
+
+  <!-- Event snippet for Outro conversion page -->
+  <script>
+    gtag('event', 'conversion', {'send_to': 'AW-16496818459/MMWvCJWRl9cbEJvypbo9'});
+  </script>
+
+  <!-- Adicione os SDKs do Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-messaging.js"></script>
+
 </head>
 <body>
+  
+  <script>
+    const firebaseConfig = {
+      apiKey: "AIzaSyBBbszxNRri_Lr_6d9cmm0yTamOSfKJawo",
+      authDomain: "afercon-lda-24cac.firebaseapp.com",
+      projectId: "afercon-lda-24cac",
+      storageBucket: "afercon-lda-24cac.appspot.com",
+      messagingSenderId: "913969877080",
+      appId: "1:913969877080:web:bd35786e707d7065defa2d",
+      measurementId: "G-0BY1M8GY39"
+    };
+
+    // Inicialize o Firebase
+    if (typeof firebase !== 'undefined' && !firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function() {
+        navigator.serviceWorker.register('/firebase-messaging-sw.js').then(function(registration) {
+          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }, function(err) {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      });
+    }
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

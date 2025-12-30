@@ -28,6 +28,9 @@ class Delivery {
   final String? driverId; // ID do motorista que aceitou
   final DateTime createdAt;
   final String? cancellationReason; // Mantido para registar o motivo.
+  final Map<String, dynamic>? driverInfo; // Informações do motorista para o cliente
+  final DateTime? clientLastViewedChat;
+  final DateTime? driverLastViewedChat;
 
   Delivery({
     required this.id,
@@ -46,6 +49,9 @@ class Delivery {
     this.driverId,
     required this.createdAt,
     this.cancellationReason,
+    this.driverInfo,
+    this.clientLastViewedChat,
+    this.driverLastViewedChat,
   });
 
   factory Delivery.fromMap(String id, Map<String, dynamic> data) {
@@ -66,6 +72,9 @@ class Delivery {
       driverId: data['driverId'],
       createdAt: (data['createdAt'] as Timestamp? ?? Timestamp.now()).toDate(),
       cancellationReason: data['cancellationReason'],
+      driverInfo: data['driverInfo'] as Map<String, dynamic>?,
+      clientLastViewedChat: (data['clientLastViewedChat'] as Timestamp?)?.toDate(),
+      driverLastViewedChat: (data['driverLastViewedChat'] as Timestamp?)?.toDate(),
     );
   }
 
@@ -88,6 +97,9 @@ class Delivery {
       'driverId': driverId,
       'createdAt': FieldValue.serverTimestamp(),
       'cancellationReason': cancellationReason,
+      'driverInfo': driverInfo,
+      'clientLastViewedChat': clientLastViewedChat != null ? Timestamp.fromDate(clientLastViewedChat!) : null,
+      'driverLastViewedChat': driverLastViewedChat != null ? Timestamp.fromDate(driverLastViewedChat!) : null,
     };
   }
 

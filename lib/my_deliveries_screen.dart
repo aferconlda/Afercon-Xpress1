@@ -1,4 +1,4 @@
-
+import 'dart:developer' as developer;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -28,22 +28,32 @@ class _MyDeliveriesScreenState extends State<MyDeliveriesScreen> {
 
   void _setupStream(String driverId) {
     setState(() {
-      _myDeliveriesStream = FirebaseFirestore.instance
-          .collection('deliveries')
-          .where('driverId', isEqualTo: driverId)
-          .where('status', whereIn: [
-            DeliveryStatus.inProgress.name,
-            DeliveryStatus.pendingConfirmation.name,
-            DeliveryStatus.completed.name,
-            DeliveryStatus.cancellationRequestedByClient.name,
-            DeliveryStatus.cancellationRequestedByDriver.name,
-            DeliveryStatus.cancelled.name,
-          ])
-          .orderBy('createdAt', descending: true)
-          .snapshots()
-          .map((snapshot) => snapshot.docs
-              .map((doc) => Delivery.fromMap(doc.id, doc.data()))
-              .toList());
+      try {
+        _myDeliveriesStream = FirebaseFirestore.instance
+            .collection('deliveries')
+            .where('driverId', isEqualTo: driverId)
+            .where('status', whereIn: [
+              DeliveryStatus.inProgress.name,
+              DeliveryStatus.pendingConfirmation.name,
+              DeliveryStatus.completed.name,
+              DeliveryStatus.cancellationRequestedByClient.name,
+              DeliveryStatus.cancellationRequestedByDriver.name,
+              DeliveryStatus.cancelled.name,
+            ])
+            .orderBy('createdAt', descending: true)
+            .snapshots()
+            .map((snapshot) => snapshot.docs
+                .map((doc) => Delivery.fromMap(doc.id, doc.data()))
+                .toList());
+      } catch (e, s) {
+          developer.log(
+          'Failed to set up deliveries stream',
+          name: 'MyDeliveriesScreen',
+          error: e,
+          stackTrace: s,
+        );
+        _myDeliveriesStream = Stream.error(e);
+      }
     });
   }
 
@@ -160,7 +170,7 @@ class DeliveryListItem extends StatelessWidget {
           backgroundColor: _getStatusColor(delivery.status),
           labelStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        onTap: () => context.push('/details/${delivery.id}'),
+        onTap: () => context.push('/delivery-details/${delivery.id}'),
         isThreeLine: true,
       ),
     );

@@ -27,7 +27,6 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    
     _deliveryStream = FirebaseFirestore.instance
         .collection('deliveries')
         .doc(widget.deliveryId)
@@ -40,7 +39,7 @@ class _ChatScreenState extends State<ChatScreen> {
         .collection('messages')
         .orderBy('timestamp', descending: true)
         .snapshots();
-    
+
     _messagesStream.listen((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (_scrollController.hasClients) {
@@ -52,9 +51,31 @@ class _ChatScreenState extends State<ChatScreen> {
         }
       });
     });
+
+    _markChatAsViewed();
   }
 
-    Future<void> _sendMessage(User user) async {
+  Future<void> _markChatAsViewed() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final deliveryRef = FirebaseFirestore.instance.collection('deliveries').doc(widget.deliveryId);
+    final deliveryDoc = await deliveryRef.get();
+    final delivery = Delivery.fromMap(deliveryDoc.id, deliveryDoc.data()!);
+
+    final updateData = <String, dynamic>{};
+    if (user.uid == delivery.userId) {
+      updateData['clientLastViewedChat'] = FieldValue.serverTimestamp();
+    } else if (user.uid == delivery.driverId) {
+      updateData['driverLastViewedChat'] = FieldValue.serverTimestamp();
+    }
+
+    if (updateData.isNotEmpty) {
+      await deliveryRef.update(updateData);
+    }
+  }
+
+  Future<void> _sendMessage(User user) async {
     if (_messageController.text.trim().isEmpty) {
       return;
     }

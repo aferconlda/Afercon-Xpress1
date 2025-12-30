@@ -27,6 +27,7 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
   final ValueNotifier<double> _basePriceNotifier = ValueNotifier<double>(0.0);
   bool _isLoading = false;
   static const double _serviceFeePercentage = 0.005; // 0.5%
+  static const double _minimumDeliveryPrice = 1000.0; // Valor mínimo da entrega
 
   @override
   void initState() {
@@ -94,6 +95,14 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
 
     try {
       final double basePrice = _basePriceNotifier.value;
+      if (basePrice < _minimumDeliveryPrice) {
+         ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('O valor mínimo para uma entrega é de ${CurrencyFormatter.format(_minimumDeliveryPrice)}.')),
+        );
+        setState(() => _isLoading = false);
+        return;
+      }
+
       final double serviceFee = basePrice * _serviceFeePercentage;
       final double totalPrice = basePrice + serviceFee;
 
@@ -174,7 +183,6 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  // ... outros campos ...
                   TextFormField(
                     controller: _titleController,
                     decoration: const InputDecoration(labelText: 'Título da Entrega', prefixIcon: Icon(Icons.label_important_outline), border: OutlineInputBorder(), helperText: 'Ex: Entrega de Documentos Urgentes'),
@@ -233,10 +241,16 @@ class _NewDeliveryScreenState extends State<NewDeliveryScreen> {
                     ),
                     keyboardType: const TextInputType.numberWithOptions(decimal: true),
                     validator: (value) {
-                      if (value == null || value.isEmpty) return 'Campo obrigatório';
+                      if (value == null || value.isEmpty) {
+                        return 'Campo obrigatório';
+                      }
                       final price = double.tryParse(value);
-                      if (price == null) return 'Valor inválido';
-                      if (price <= 0) return 'O valor deve ser positivo';
+                      if (price == null) {
+                        return 'Valor inválido';
+                      }
+                      if (price < _minimumDeliveryPrice) {
+                        return 'O valor mínimo para uma entrega é de ${CurrencyFormatter.format(_minimumDeliveryPrice)}.';
+                      }
                       return null;
                     },
                   ),

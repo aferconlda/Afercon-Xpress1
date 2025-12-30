@@ -11,14 +11,12 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // Função para verificar se o utilizador é o cliente ou o motorista de uma entrega
     function isDeliveryParticipant(deliveryDoc) {
       let isClient = isUser(deliveryDoc.data.userId);
       let isDriver = 'driverId' in deliveryDoc.data && isUser(deliveryDoc.data.driverId);
       return isClient || isDriver;
     }
 
-    // Função para verificar os campos que estão a ser alterados numa atualização
     function isOnlyFields(request, resource, fields) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
     }
@@ -34,7 +32,7 @@ service cloud.firestore {
 
     match /deliveries/{deliveryId} {
       allow list: if isSignedIn();
-      allow get: if isSignedIn(); // Simplificado - a UI deve filtrar o que mostrar
+      allow get: if isSignedIn();
 
       allow create: if isUser(request.resource.data.userId)
                     && request.resource.data.status == 'available'
@@ -42,16 +40,16 @@ service cloud.firestore {
 
       allow update: if isSignedIn() && (
         // --- ACEITAR ENTREGA ---
-        // Um motorista (que não é o cliente) pode aceitar uma entrega disponível
+        // Um motorista (que não é o cliente) pode aceitar uma entrega disponível e adicionar as suas informações
         ( resource.data.status == 'available' &&
           request.resource.data.status == 'inProgress' &&
           request.resource.data.driverId == request.auth.uid &&
           resource.data.userId != request.auth.uid &&
-          isOnlyFields(request, resource, ['status', 'driverId'])
+          // CORREÇÃO: Adicionado 'driverInfo' aos campos permitidos
+          isOnlyFields(request, resource, ['status', 'driverId', 'driverInfo']) 
         ) ||
 
         // --- ATUALIZAR ESTADO (MOTORISTA) ---
-        // O motorista pode atualizar para 'pendingConfirmation'
         ( isUser(resource.data.driverId) &&
           resource.data.status == 'inProgress' &&
           request.resource.data.status == 'pendingConfirmation' &&
@@ -59,7 +57,6 @@ service cloud.firestore {
         ) ||
 
         // --- CONFIRMAR ENTREGA (CLIENTE) ---
-        // O cliente pode confirmar e completar a entrega
         ( isUser(resource.data.userId) &&
           resource.data.status == 'pendingConfirmation' &&
           request.resource.data.status == 'completed' &&
@@ -67,23 +64,20 @@ service cloud.firestore {
         ) ||
 
         // --- SOLICITAR CANCELAMENTO ---
-        // O cliente ou o motorista podem solicitar o cancelamento de uma entrega em progresso
         ( (isUser(resource.data.userId) || isUser(resource.data.driverId)) &&
           resource.data.status == 'inProgress' &&
           (request.resource.data.status == 'cancellationRequestedByClient' || request.resource.data.status == 'cancellationRequestedByDriver') &&
-          isOnlyFields(request, resource, ['status', 'cancellationReason']) // Permitir a razão do cancelamento
+          isOnlyFields(request, resource, ['status', 'cancellationReason'])
         ) ||
 
         // --- REJEITAR CANCELAMENTO ---
-        // O cliente ou o motorista podem rejeitar o cancelamento, voltando a 'inProgress'
         ( (isUser(resource.data.userId) || isUser(resource.data.driverId)) &&
           (resource.data.status == 'cancellationRequestedByClient' || resource.data.status == 'cancellationRequestedByDriver') &&
           request.resource.data.status == 'inProgress' &&
-          isOnlyFields(request, resource, ['status', 'cancellationReason']) // Permitir remover a razão
+          isOnlyFields(request, resource, ['status', 'cancellationReason'])
         ) ||
 
         // --- CONFIRMAR CANCELAMENTO (PARA CANCELADO) ---
-        // O motorista confirma o pedido do cliente, cancelando permanentemente a entrega
         ( isUser(resource.data.driverId) &&
           resource.data.status == 'cancellationRequestedByClient' &&
           request.resource.data.status == 'cancelled' &&
@@ -91,12 +85,12 @@ service cloud.firestore {
         ) ||
 
         // --- CONFIRMAR CANCELAMENTO (PARA DISPONÍVEL) ---
-        // O cliente confirma o pedido do motorista, libertando a entrega
         ( isUser(resource.data.userId) &&
           resource.data.status == 'cancellationRequestedByDriver' &&
           request.resource.data.status == 'available' &&
           request.resource.data.driverId == null &&
-          isOnlyFields(request, resource, ['status', 'driverId', 'cancellationReason'])
+          // CORREÇÃO: Adicionado 'driverInfo' para remoção
+          isOnlyFields(request, resource, ['status', 'driverId', 'cancellationReason', 'driverInfo'])
         )
       );
 
